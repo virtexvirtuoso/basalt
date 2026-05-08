@@ -40,7 +40,25 @@ from basalt.serialize import (
 _PLAIN_STDOUT = not sys.stdout.isatty()
 
 
-app = typer.Typer(add_completion=False, no_args_is_help=True, help="Basalt — read your vault, surface what you believe.")
+# ── Brand chrome ────────────────────────────────────────────────
+# A single block of branding that prints at the top of standalone
+# command runs. Suppressed when piped (NO_COLOR / non-tty) and on
+# JSON output. Six lines, no animation, no box. Lets the brief breathe.
+
+BANNER_LINES = (
+    "       [#D9824B]___[/]",
+    "      [#D9824B]\u2571[/]   [#D9824B]\u2572[/]",
+    "     [#D9824B]\u2571[/]     [#D9824B]\u2572[/]      [#EFE9E2]Basalt[/][bold #D9824B].[/]",
+    "     [#D9824B]\u2572[/]     [#D9824B]\u2571[/]      [dim]reads your vault, surfaces what you believe.[/]",
+    "      [#D9824B]\u2572[/]___[#D9824B]\u2571[/]",
+)
+
+
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Basalt. Reads your vault and surfaces what you believe but never wrote down. Standalone, read-only, local-first.",
+)
 # Auto-disable color/style when piped — keeps `basalt brief | jq` clean.
 console = Console(no_color=_PLAIN_STDOUT, force_terminal=False if _PLAIN_STDOUT else None)
 
@@ -51,6 +69,52 @@ def _emit_json(payload: dict) -> None:
     sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
     sys.stdout.write("\n")
     sys.stdout.flush()
+
+
+def _print_banner() -> None:
+    """Print the basalt mark + wordmark once, at the top of a standalone run.
+    Suppressed when piped or in JSON mode — keeps `basalt brief | jq` clean."""
+    if _PLAIN_STDOUT:
+        return
+    console.print()
+    for line in BANNER_LINES:
+        console.print(line)
+    console.print()
+
+
+def _print_signoff(verb: str) -> None:
+    """Single-line footer that closes a brief or audit run.
+    Replaces the bare console.rule() — adds a fragment of voice without chrome."""
+    if _PLAIN_STDOUT:
+        return
+    console.print()
+    console.print(
+        "[#7A7269]⎯⎯⎯[/]  "
+        f"[dim italic]end of {verb}.[/]  "
+        "[dim]the vault keeps the receipts.[/]"
+    )
+
+
+def _maybe_first_run_greeting(conn) -> None:
+    """Print a single welcome the first time `basalt index` builds a DB.
+    Stored in the `meta` table — never repeats, even across machines if
+    the DB is copied. Suppressed when piped."""
+    if _PLAIN_STDOUT:
+        return
+    cur = conn.execute("SELECT value FROM meta WHERE key = 'first_run_seen'")
+    row = cur.fetchone()
+    if row is not None:
+        return
+    console.print()
+    console.print("  [#D9824B]\u2b22[/]  [#EFE9E2]First index.[/]")
+    console.print("  [dim]Basalt will not write to your vault. It reads, indexes, and waits.[/]")
+    console.print("  [dim]When this finishes, run `basalt brief` to see what's been sitting there.[/]")
+    console.print()
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES ('first_run_seen', ?)",
+        (str(int(time.time())),),
+    )
+    conn.commit()
 
 
 DEFAULT_VAULT = Path.home() / "virtuoso-vault"
@@ -74,8 +138,9 @@ def cmd_index(
 ):
     """Walk the vault, parse frontmatter, build link graph, embed."""
     t0 = time.time()
-    console.print(f"[dim]Indexing[/dim] [bold]{vault}[/bold] [dim]→[/dim] [bold]{db}[/bold]")
     conn = open_db(db)
+    _maybe_first_run_greeting(conn)
+    console.print(f"[dim]Indexing[/dim] [bold]{vault}[/bold] [dim]→[/dim] [bold]{db}[/bold]")
 
     n_notes = 0
     n_links = 0
@@ -143,6 +208,8 @@ def cmd_brief(
     if fmt_key not in ("text", "json"):
         raise typer.BadParameter(f"unknown --format '{fmt}', try text or json")
 
+    if fmt_key != "json":
+        _print_banner()
     conn = open_db(db)
     try:
         # JSON path: collect findings, emit single JSON document, no Rich rendering.
@@ -191,8 +258,10 @@ def cmd_brief(
                 for r in results:
                     record_finding(conn, "buried-insight", r)
             elif section_key == "buried-insight":
-                _say_no_result("No buried insight found.",
-                               "The vault may be too young, too sparse, or too recently-edited everywhere.")
+                _say_no_result(
+                    "Nothing buried — yet.",
+                    "Either the vault is too young, too sparse, or you've already revisited everything you wrote. Come back in a week.",
+                )
                 raise typer.Exit(code=1)
 
         if section_key in ("connection", "all"):
@@ -202,8 +271,10 @@ def cmd_brief(
                 for p in pairs:
                     record_finding(conn, "connection", p)
             elif section_key == "connection":
-                _say_no_result("No latent connections found above the similarity floor.",
-                               f"min similarity = {CONN_MIN_SIM:.2f}; raise --top or seed the vault more.")
+                _say_no_result(
+                    "No latent connections crossed the similarity floor.",
+                    f"floor = {CONN_MIN_SIM:.2f}. Raise --top, lower --min-sim, or write more before asking again.",
+                )
                 raise typer.Exit(code=1)
 
         if section_key in ("contradiction", "all"):
@@ -213,8 +284,10 @@ def cmd_brief(
                 for p in pairs:
                     record_finding(conn, "contradiction", p)
             elif section_key == "contradiction":
-                _say_no_result("No contradiction candidates found.",
-                               "v0 is heuristic — surface text needs explicit reversal/negation markers.")
+                _say_no_result(
+                    "No contradictions surfaced.",
+                    "v0 is heuristic and looks for explicit reversal markers. Absence is not evidence — it just means nothing is wearing a sign.",
+                )
                 raise typer.Exit(code=1)
     finally:
         conn.close()
@@ -253,8 +326,7 @@ def _render_buried_results(results: list) -> None:
             console.print(Text("─────────────────────", style="#3A3A3A"))
         _render_buried_body(r, index=i if n > 1 else None)
 
-    console.print()
-    console.rule(style="bright_black")
+    _print_signoff("brief")
 
 
 def _render_buried_body(r, index: int | None = None) -> None:
@@ -341,8 +413,7 @@ def _render_connections(pairs: list[ConnectionPair]) -> None:
         _render_falsification("connection", p)
         console.print(Text("   ▸ Link A ↔ B     ▸ Open both     ▸ Dismiss", style="#D9824B"))
 
-    console.print()
-    console.rule(style="bright_black")
+    _print_signoff("brief")
 
 
 # ── Contradiction rendering ─────────────────────────────────────
@@ -382,8 +453,7 @@ def _render_contradictions(pairs: list[ContradictionPair]) -> None:
         _render_falsification("contradiction", p)
         console.print(Text("   ▸ Mark resolved     ▸ Open both     ▸ Dismiss as not-a-conflict", style="#D9824B"))
 
-    console.print()
-    console.rule(style="bright_black")
+    _print_signoff("brief")
 
 
 # ── Calibration: falsification rules + track record ─────────────
@@ -516,9 +586,7 @@ def cmd_audit(
         })
         return
 
-    console.print()
-    console.rule(style="bright_black")
-    console.print()
+    _print_banner()
     console.print(Text("AUDIT", style="bold #D9824B"))
     console.print(Text("─────────────────────", style="#7A7269"))
 
@@ -538,7 +606,7 @@ def cmd_audit(
                 console.print(Text(f"      {line}", style="dim"))
             console.print()
     else:
-        console.print(Text("no pending briefs changed status", style="dim"))
+        console.print(Text("nothing changed status — the record stands.", style="dim italic"))
         console.print()
 
     # Track-record bar
@@ -562,8 +630,7 @@ def cmd_audit(
     else:
         console.print(Text(f"no briefs in last {tr.days}d — run `basalt brief` to start tracking", style="dim"))
 
-    console.print()
-    console.rule(style="bright_black")
+    _print_signoff("audit")
 
 
 @app.command("contradiction")
@@ -613,6 +680,7 @@ def cmd_demo(
         console.print("[dim]Reinstall the package or check the source tree.[/dim]")
         raise typer.Exit(code=1)
 
+    _print_banner()
     console.print(f"[dim]Demo mode — using bundled sample vault[/dim] [bold]{SAMPLE_VAULT}[/bold]")
     # Always rebuild the demo DB so the demo is reproducible
     if DEMO_DB.exists():
@@ -664,6 +732,29 @@ def cmd_demo(
             raise typer.Exit(code=1)
     finally:
         conn.close()
+
+
+@app.command("about")
+def cmd_about() -> None:
+    """What Basalt is, in fewer words than the README."""
+    if _PLAIN_STDOUT:
+        # Plain-text mode for `basalt about | mail -s ...`
+        console.print("Basalt — reads your vault, surfaces what you believe.")
+        console.print("Standalone. Read-only. Local-first.")
+        console.print(f"schema {SCHEMA_VERSION}")
+        return
+    _print_banner()
+    console.print("  [#EFE9E2]Three commands. Sixty seconds. Runs on your laptop.[/]")
+    console.print()
+    console.print("  [dim]Basalt forms in slow cooling — hexagonal columns, brittle to[/]")
+    console.print("  [dim]impact, durable to weather. The vault is the same.[/]")
+    console.print()
+    console.print(
+        f"  [#7A7269]schema {SCHEMA_VERSION}[/]   "
+        "[#7A7269]·[/]   "
+        "[#7A7269]standalone · read-only · local-first[/]"
+    )
+    console.print()
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Planned
+### Planned (carried)
 - Implicit Thesis verb (needs claim ledger)
 - Drift verb (needs daily-note time-marker parser)
 - Contradiction v1 — LLM-based pairwise compatibility classifier on top of v0 candidates
@@ -14,6 +14,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - PyPI publish of `basalt-vault[mcp]` to make `pip install basalt-vault[mcp]` work without source clone
 - MCP Registry submission once PyPI is live
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` and `either_shrinks` rules can fire
+
+## [0.0.6] — 2026-05-08
+
+### Added — CLI brand chrome
+
+The Basalt mark now greets you. Designed by the whimsy-injector agent
+under tight constraints (no emojis, no animations, no mascot, no
+"awesome!" — geological-editorial register only). Static, restrained,
+once-per-run.
+
+- **Banner** at the top of `basalt brief`, `basalt audit`, `basalt demo`,
+  `basalt about` — open hexagon mark + wordmark with italic period in
+  basalt amber + one-line tagline. Suppressed when stdout is piped
+  (keeps `basalt brief | jq` clean).
+- **`basalt about`** — new command. Wordmark + the *"Three commands.
+  Sixty seconds. Runs on your laptop"* line + a single geological
+  metaphor that earns its keep ("Basalt forms in slow cooling —
+  hexagonal columns, brittle to impact, durable to weather. The vault
+  is the same.") + schema version + the wedge phrase.
+- **Sign-off** line at the end of every Brief and Audit run replaces
+  the bare `console.rule()` — *"⎯⎯⎯  end of brief.  the vault keeps
+  the receipts."* — once-per-run, dry, no animations.
+- **First-run greeting** in `basalt index` — exactly once per DB,
+  tracked in the `meta` table. Reinforces the read-only promise the
+  moment the user hands Basalt their vault for the first time.
+- **Microcopy upgrades** in 5 spots — empty-result messages, `--help`
+  tagline, audit no-change line. Voice shifts from flat error-message
+  cadence to senior-collaborator marginalia.
+
+### Engineering
+
+- 4 new helpers in `cli.py`: `_print_banner`, `_print_signoff`,
+  `_maybe_first_run_greeting`, plus the `cmd_about` command.
+- All branding gated on `_PLAIN_STDOUT` — banner / signoff / greeting
+  invisible when piped. `basalt about` falls back to plain text.
+- Unicode box-drawing diagonals (U+2571 / U+2572) replace ASCII
+  backslashes in the banner so Rich markup doesn't escape them.
 
 ## [0.0.5] — 2026-05-08
 
