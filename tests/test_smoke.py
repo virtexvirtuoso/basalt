@@ -307,6 +307,40 @@ def test_contradiction_finds_candidates_with_signals(tmp_path):
     assert matched, f"expected the synthetic pair surfaced; got: {[(p.note_a_path, p.note_b_path) for p in pairs]}"
 
 
+def test_mcp_server_module_loads_and_registers_four_tools():
+    """The MCP server module loads, FastMCP instance exists, exactly the four
+    expected tools are registered. This is the contract for any MCP client."""
+    try:
+        from basalt.mcp_server import mcp, basalt_brief, basalt_connection, basalt_contradiction, basalt_audit
+    except ImportError as e:
+        pytest.skip(f"mcp package not installed: {e}")
+
+    # FastMCP exposes a tool manager; tool names must match the plan.
+    assert hasattr(mcp, "_tool_manager"), "FastMCP shape changed — adjust this test"
+    tool_names = {t.name for t in mcp._tool_manager.list_tools()}
+    assert tool_names == {"basalt_brief", "basalt_connection", "basalt_contradiction", "basalt_audit"}, (
+        f"expected exactly the 4 v0 tools; got {tool_names}"
+    )
+
+
+def test_mcp_server_audit_returns_track_record_on_empty_db(tmp_path):
+    """basalt_audit should not crash on a fresh DB — returns an empty
+    verdicts list + zeroed track record."""
+    try:
+        from basalt.mcp_server import _set_config, basalt_audit
+    except ImportError as e:
+        pytest.skip(f"mcp package not installed: {e}")
+
+    db = tmp_path / "fresh.db"
+    open_db(db).close()  # create empty schema
+
+    _set_config(vault=None, db=db)
+    out = basalt_audit(days=90)
+    assert out["verb"] == "audit"
+    assert out["verdicts"] == []
+    assert out["track_record"]["total"] == 0
+
+
 def test_json_serializers_produce_stable_schemas():
     """Verb dataclasses serialize to dicts with the expected top-level keys.
     These shapes are the contract for the upcoming MCP server — they must be stable."""

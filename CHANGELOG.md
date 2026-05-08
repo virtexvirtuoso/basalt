@@ -7,13 +7,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Planned
-- MCP server wrapper exposing verbs as tools for any MCP host (now unblocked by 0.0.4 JSON output)
 - Implicit Thesis verb (needs claim ledger)
 - Drift verb (needs daily-note time-marker parser)
 - Contradiction v1 — LLM-based pairwise compatibility classifier on top of v0 candidates
 - Obsidian plugin shell
-- PyPI distribution as `basalt-vault` (the name `basalt` is taken)
+- PyPI publish of `basalt-vault[mcp]` to make `pip install basalt-vault[mcp]` work without source clone
+- MCP Registry submission once PyPI is live
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` and `either_shrinks` rules can fire
+
+## [0.0.5] — 2026-05-08
+
+### Added — MCP server
+
+The strategic doorway. `obsidian-second-brain` (eugeniughelbur, 968 stars)
+is locked into Claude Code as a skill. An MCP server reaches Claude
+Desktop, Cursor, Cline, Zed, and VS Code Copilot in one shot — and is
+structurally outside his category because read-only MCP tool semantics
+are incompatible with his "vault rewrites itself" architecture.
+
+- **`pip install basalt-vault[mcp]`** — new optional extras; installs the
+  official `mcp` package with bundled FastMCP 1.x.
+- **`basalt-mcp` console script** — runs the MCP server over stdio.
+  `--vault` / `--db` args + `BASALT_VAULT` / `BASALT_DB` env vars.
+- **4 tools registered:** `basalt_brief`, `basalt_connection`,
+  `basalt_contradiction`, `basalt_audit`. All read-only on the vault;
+  only `basalt_audit` mutates the local `briefs` calibration table.
+- **`basalt_index` deliberately not exposed** — too heavy, runs Ollama,
+  takes minutes on a 1,683-note vault. Document the install as
+  *"CLI indexes, MCP reads."*
+- **No resources, no prompts, no sampling in v0** per [[MCP-Ship-Plan-2026-05-08]]
+  §3.2 — resources invert the user-asks-the-question shape; sampling
+  breaks the no-network promise.
+- **2 new smoke tests** verify the server module loads with exactly the
+  four expected tools and `basalt_audit` returns clean output on a fresh
+  DB. 21/21 pass.
+
+### Engineering
+
+- New `mcp_server.py` (~280 LOC). Uses the `mcp.server.fastmcp.FastMCP`
+  instance. Per-call DB open/close keeps the server stateless and
+  tolerant to DB path changes.
+- `pyproject.toml`: bumped to `0.0.5`, added `[project.optional-dependencies] mcp`,
+  declared `basalt-mcp` console script.
+- README gained a full **MCP integration** section with Claude Desktop
+  config example.
 
 ## [0.0.4] — 2026-05-08
 

@@ -147,6 +147,56 @@ Every verb reuses the same primitives:
 - **Hub-note penalty** — outgoing-link-density per 100 words. Hard-excludes MOCs above 1.5; soft-penalizes 0.5–1.5 gray zone.
 - **Vault-age-aware thresholds** — Buried Insight derives age/dormancy windows from the oldest note's date; clamped to sensible floors and ceilings.
 
+## MCP integration
+
+Basalt exposes its verb library as an MCP server, so any MCP-compatible
+client (Claude Desktop, Cursor, Cline, Zed, VS Code Copilot) can call
+Basalt's verbs as tools.
+
+```bash
+pip install -e ".[mcp]"
+basalt-mcp --help
+```
+
+Wire into Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "basalt": {
+      "command": "basalt-mcp"
+    }
+  }
+}
+```
+
+Or with explicit paths:
+
+```json
+{
+  "mcpServers": {
+    "basalt": {
+      "command": "basalt-mcp",
+      "args": ["--vault", "/path/to/vault", "--db", "/path/to/basalt.db"]
+    }
+  }
+}
+```
+
+Then ask Claude: *"run a Basalt brief on my vault, all sections, top 2."*
+
+The MCP server exposes 4 tools:
+
+| Tool | Maps to | Notes |
+|------|---------|-------|
+| `basalt_brief` | `basalt brief` | Buried Insight / Connection / Contradiction; returns finding objects with falsification rules |
+| `basalt_connection` | `basalt connection` | Just connections, with `min_sim` knob |
+| `basalt_contradiction` | `basalt contradiction` | v0 heuristic candidates |
+| `basalt_audit` | `basalt audit` | Re-evaluates pending findings, returns track record |
+
+The server is **read-only on the vault** — it never writes to your `.md` files.
+Run `basalt index` from the CLI before pointing the MCP server at a fresh vault.
+
 ## Privacy
 
 Local-first by default. Your vault is read from disk; embeddings are computed

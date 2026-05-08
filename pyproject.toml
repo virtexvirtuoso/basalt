@@ -2,7 +2,7 @@
 # PyPI distribution name — `basalt` is already taken by an unrelated package.
 # Internal package name stays `basalt`; CLI command stays `basalt`.
 name = "basalt-vault"
-version = "0.0.1"
+version = "0.0.5"
 description = "Reads your vault and surfaces what you believe but never wrote down."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,8 +15,18 @@ dependencies = [
     "rich>=14",
 ]
 
+[project.optional-dependencies]
+# `pip install basalt-vault[mcp]` to expose the verbs as MCP tools to any
+# MCP client (Claude Desktop, Cursor, Cline, Zed, VS Code Copilot).
+mcp = [
+    "mcp>=1.0",
+]
+
 [project.scripts]
 basalt = "basalt.cli:app"
+# `basalt-mcp` runs the MCP server over stdio. Wire into Claude Desktop /
+# Cursor / Cline configs — see README.md "MCP integration" section.
+basalt-mcp = "basalt.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
