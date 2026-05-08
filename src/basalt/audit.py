@@ -44,6 +44,8 @@ def falsification_rules_for(verb: str, finding: Any) -> list[dict]:
         return _contradiction_rules(finding)
     if verb == "implicit-thesis":
         return _implicit_thesis_rules(finding)
+    if verb == "drift":
+        return _drift_rules(finding)
     return []
 
 
@@ -133,6 +135,41 @@ def _implicit_thesis_rules(t) -> list[dict]:
     ]
 
 
+def _drift_rules(d) -> list[dict]:
+    """Falsification for a drift finding. The drift is real if the divergence
+    persists; falsified if stated and lived re-converge."""
+    over = d.headline_overworked.name if d.headline_overworked else None
+    under = d.headline_underworked.name if d.headline_underworked else None
+    rules: list[dict] = []
+    if over:
+        rules.append({
+            "kind": "drift_resolved",
+            "params": {"project": over, "direction": "down", "grace_days": 30},
+            "text": (
+                f"wrong if {over}'s share of daily-note mentions drops back toward "
+                f"its stated share within 30 days (the drift was a phase, not a pattern)"
+            ),
+        })
+    if under:
+        rules.append({
+            "kind": "drift_resolved",
+            "params": {"project": under, "direction": "up", "grace_days": 30},
+            "text": (
+                f"wrong if {under}'s share of daily-note mentions rises back toward "
+                f"its stated share within 30 days (you've responded to the drift)"
+            ),
+        })
+    rules.append({
+        "kind": "structural_change",
+        "params": {"projects_at_log": [s.name for s in d.shares]},
+        "text": (
+            "wrong if the project list itself changes materially within 60 days "
+            "(you renamed/archived projects — the drift was structural, not behavioural)"
+        ),
+    })
+    return rules
+
+
 def _contradiction_rules(p) -> list[dict]:
     return [
         {
@@ -178,6 +215,12 @@ def _finding_key(verb: str, finding: Any) -> str:
         # of internal order — even if the centroid changes.
         members_key = "|".join(sorted(finding.member_paths))
         return f"{verb}:{members_key}"
+    if verb == "drift":
+        # Same drift = same headline pair within the same window. Idempotent
+        # against multiple `basalt brief` runs in a day.
+        over = finding.headline_overworked.name if finding.headline_overworked else "-"
+        under = finding.headline_underworked.name if finding.headline_underworked else "-"
+        return f"{verb}:{under}->{over}@{finding.window_days}d"
     return f"{verb}:?"
 
 
@@ -222,6 +265,19 @@ def _finding_payload(verb: str, finding: Any) -> dict:
             "folder_diversity": finding.folder_diversity,
             "span_days": finding.span_days,
             "mean_similarity": finding.mean_similarity,
+        }
+    if verb == "drift":
+        return {
+            "window_days": finding.window_days,
+            "daily_note_count": finding.daily_note_count,
+            "project_count": finding.project_count,
+            "total_mentions": finding.total_mentions,
+            "headline_overworked": finding.headline_overworked.name if finding.headline_overworked else None,
+            "headline_underworked": finding.headline_underworked.name if finding.headline_underworked else None,
+            "shares_at_log": [
+                {"name": s.name, "stated_share": s.stated_share, "lived_share": s.lived_share}
+                for s in finding.shares
+            ],
         }
     return {}
 
@@ -410,6 +466,44 @@ def _evaluate_rule(
         if age_days < p.get("grace_days", 90):
             return "pending", ""
         return "pending", "v0: needs manual review (auto-evaluation not implemented)"
+
+    if kind == "drift_resolved":
+        # v0: needs to re-run drift on the current window and compare
+        # the project's lived/stated shares. Heuristic placeholder until v1.
+        if age_days < p.get("grace_days", 30):
+            return "pending", ""
+        return "pending", "v0: re-run `basalt drift` to compare shares (auto-evaluation not implemented)"
+
+    if kind == "structural_change":
+        # The drift is structural rather than behavioural if the set of
+        # projects changes materially. v0: count current projects and
+        # compare to the count at log time; >25% change → falsify.
+        projects_at_log = p.get("projects_at_log", [])
+        if not projects_at_log:
+            return "pending", ""
+        # Check current project list via path-prefix scan (same logic as drift.py)
+        # (Importing find_drift here would be circular; use a lightweight inline match.)
+        import re as _re
+        pat = _re.compile(r"^(?:\d+[-_])?Projects/([^/]+)(?:/|$)")
+        current = set()
+        for path, _ in state.items():
+            m = pat.match(path)
+            if m:
+                current.add(m.group(1))
+        if not current:
+            return "pending", ""
+        logged = set(projects_at_log)
+        intersection = current & logged
+        union = current | logged
+        if not union:
+            return "pending", ""
+        jaccard = len(intersection) / len(union)
+        if jaccard < 0.75:
+            return "falsified", (
+                f"project list changed materially since log time "
+                f"(jaccard {jaccard:.2f}); drift was structural, not behavioural"
+            )
+        return "pending", ""
 
     return "pending", f"unknown rule kind {kind}"
 

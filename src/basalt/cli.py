@@ -18,6 +18,7 @@ from basalt.buried import find_buried_insight, find_buried_insights
 from basalt.connection import find_connections, ConnectionPair, DEFAULT_MIN_SIM as CONN_MIN_SIM
 from basalt.contradiction import find_contradictions, ContradictionPair, DEFAULT_MIN_SIM as CONT_MIN_SIM
 from basalt.implicit_thesis import find_implicit_theses, ThesisCluster, DEFAULT_MIN_SIM as THESIS_MIN_SIM
+from basalt.drift import find_drift, DriftFinding, DEFAULT_WINDOW_DAYS as DRIFT_WINDOW_DAYS
 from basalt.audit import (
     record_finding,
     render_falsification_lines,
@@ -30,6 +31,7 @@ from basalt.serialize import (
     connection_to_dict,
     contradiction_to_dict,
     implicit_thesis_to_dict,
+    drift_to_dict,
     audit_result_to_dict,
     track_record_to_dict,
     with_falsification,
@@ -125,9 +127,10 @@ SAMPLE_VAULT  = Path(__file__).resolve().parent.parent.parent / "examples" / "sa
 DEMO_DB       = Path.home() / ".basalt" / "demo.db"
 
 # Section keys accepted by `basalt brief --section`
-SECTIONS_AVAILABLE = {"buried-insight", "connection", "contradiction", "implicit-thesis", "all"}
-SECTIONS_SHIPPED   = ["buried-insight", "connection", "contradiction", "implicit-thesis"]  # in render order
-SECTIONS_PLANNED   = {"drift": "needs daily-note time-marker parser (Phase 1)"}
+# 4-of-4 site-advertised unlocks now ship; SECTIONS_PLANNED is empty until v1 verbs.
+SECTIONS_AVAILABLE = {"buried-insight", "connection", "contradiction", "implicit-thesis", "drift", "all"}
+SECTIONS_SHIPPED   = ["buried-insight", "connection", "contradiction", "implicit-thesis", "drift"]  # render order
+SECTIONS_PLANNED: dict[str, str] = {}
 
 
 @app.command("index")
@@ -253,6 +256,14 @@ def cmd_brief(
                 ]
                 for c in clusters:
                     record_finding(conn, "implicit-thesis", c)
+            if section_key in ("drift", "all"):
+                drifts = find_drift(conn, top_n=max(1, top)) or []
+                payload["findings"]["drift"] = [
+                    with_falsification(drift_to_dict(d), "drift", d)
+                    for d in drifts
+                ]
+                for d in drifts:
+                    record_finding(conn, "drift", d)
             _emit_json(payload)
             return
 
@@ -309,6 +320,19 @@ def cmd_brief(
                 _say_no_result(
                     "No implicit thesis surfaced.",
                     "v0 looks for clusters of 3+ topically-convergent notes spanning ≥2 folders or ≥30 days. Either you're not converging yet, or your through-lines are too narrow to cluster.",
+                )
+                raise typer.Exit(code=1)
+
+        if section_key in ("drift", "all"):
+            drifts = find_drift(conn, top_n=max(1, top))
+            if drifts:
+                _render_drift(drifts)
+                for d in drifts:
+                    record_finding(conn, "drift", d)
+            elif section_key == "drift":
+                _say_no_result(
+                    "No drift surfaced.",
+                    f"v0 needs ≥2 projects under `02-Projects/` and ≥3 dated daily notes in the last {DRIFT_WINDOW_DAYS}d. Add daily notes that mention project names — drift becomes legible from the second week.",
                 )
                 raise typer.Exit(code=1)
     finally:
@@ -534,6 +558,83 @@ def _render_implicit_theses(clusters: list[ThesisCluster]) -> None:
     _print_signoff("brief")
 
 
+# ── Drift rendering ─────────────────────────────────────────────
+
+def _render_drift(drifts: list[DriftFinding]) -> None:
+    if not drifts:
+        return
+    n = len(drifts)
+    title = "THE DRIFT" if n == 1 else f"DRIFT  ({n})"
+    console.print()
+    console.rule(style="bright_black")
+    console.print()
+    console.print(Text(title, style="bold #D9824B"))
+    console.print(Text("─────────────────────", style="#7A7269"))
+    console.print(Text(
+        "what you say is the priority versus what you actually spent the week on",
+        style="dim"))
+
+    for i, d in enumerate(drifts, 1):
+        if i > 1:
+            console.print()
+            console.print(Text("─────────────────────", style="#3A3A3A"))
+        console.print()
+        if n > 1:
+            console.print(Text(f"{i:02}.", style="bold #D9824B"))
+        console.print(Text.assemble(
+            (f"window {d.window_days}d  ·  ", "default"),
+            (f"{d.daily_note_count}", "bold"),
+            (" daily notes  ·  ", "default"),
+            (f"{d.project_count}", "bold"),
+            (" projects  ·  ", "default"),
+            (f"{d.total_mentions}", "bold"),
+            (" total mentions", "default"),
+        ))
+        console.print()
+
+        # Stated vs lived top-3 each
+        stated_top = sorted(d.shares, key=lambda s: -s.stated_share)[:3]
+        lived_top  = sorted(d.shares, key=lambda s: -s.lived_share)[:3]
+        console.print(Text("  Stated", style="dim"))
+        for s in stated_top:
+            console.print(Text(
+                f"    {s.stated_rank:>2}. {s.name:30}  {s.stated_notes:>3} notes  ({s.stated_share*100:5.1f}%)",
+                style="default" if s.stated_rank == 1 else "dim",
+            ))
+        console.print()
+        console.print(Text("  Lived", style="dim"))
+        for s in lived_top:
+            console.print(Text(
+                f"    {s.lived_rank:>2}. {s.name:30}  {s.lived_mentions:>3} mentions  ({s.lived_share*100:5.1f}%)",
+                style="default" if s.lived_rank == 1 else "dim",
+            ))
+        console.print()
+
+        # Headline drift narrative
+        if d.headline_overworked or d.headline_underworked:
+            console.print(Text("  The drift", style="#D9824B"))
+            if d.headline_underworked:
+                u = d.headline_underworked
+                console.print(Text(
+                    f"    {u.name} is your stated #{u.stated_rank} but lived #{u.lived_rank}  "
+                    f"({u.drift_pct:+.1f}pp)",
+                    style="default",
+                ))
+            if d.headline_overworked:
+                o = d.headline_overworked
+                console.print(Text(
+                    f"    {o.name} is your stated #{o.stated_rank} but lived #{o.lived_rank}  "
+                    f"({o.drift_pct:+.1f}pp)",
+                    style="default",
+                ))
+        console.print()
+
+        _render_falsification("drift", d)
+        console.print(Text("   ▸ Re-rank priorities     ▸ Open daily notes     ▸ Snooze a week", style="#D9824B"))
+
+    _print_signoff("brief")
+
+
 # ── Calibration: falsification rules + track record ─────────────
 
 def _render_falsification(verb: str, finding) -> None:
@@ -711,6 +812,40 @@ def cmd_audit(
     _print_signoff("audit")
 
 
+@app.command("drift")
+def cmd_drift(
+    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    days: int = typer.Option(DRIFT_WINDOW_DAYS, "--days", min=7, max=365,
+                             help="Window for daily-note mentions (default 30)."),
+    fmt: str = typer.Option("text", "--format", "-f", help="Output format: 'text' or 'json'."),
+):
+    """Surface drift — projects whose lived priority (daily-note mentions) diverges from stated priority (project-folder structure)."""
+    conn = open_db(db)
+    drifts = find_drift(conn, window_days=days, top_n=1)
+    if fmt.strip().lower() == "json":
+        conn.close()
+        _emit_json({
+            "schema": SCHEMA_VERSION,
+            "verb": "drift",
+            "version": "v0",
+            "window_days": days,
+            "findings": [with_falsification(drift_to_dict(d), "drift", d) for d in drifts or []],
+        })
+        return
+    if not drifts:
+        conn.close()
+        _say_no_result(
+            "No drift surfaced.",
+            f"v0 needs ≥2 projects under `02-Projects/` and ≥3 dated daily notes in the last {days}d.",
+        )
+        raise typer.Exit(code=1)
+    _print_banner()
+    _render_drift(drifts)
+    for d in drifts:
+        record_finding(conn, "drift", d)
+    conn.close()
+
+
 @app.command("thesis")
 def cmd_thesis(
     db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
@@ -843,6 +978,11 @@ def cmd_demo(
             clusters = find_implicit_theses(conn, top_n=top)
             if clusters:
                 _render_implicit_theses(clusters)
+                any_rendered = True
+        if section_key in ("drift", "all"):
+            drifts = find_drift(conn, top_n=1)
+            if drifts:
+                _render_drift(drifts)
                 any_rendered = True
         if not any_rendered:
             console.print("[yellow]No findings on the sample vault for the requested section(s).[/yellow]")

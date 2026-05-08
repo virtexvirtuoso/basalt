@@ -49,6 +49,7 @@ from basalt.buried import find_buried_insights
 from basalt.connection import find_connections, DEFAULT_MIN_SIM as CONN_MIN_SIM
 from basalt.contradiction import find_contradictions, DEFAULT_MIN_SIM as CONT_MIN_SIM
 from basalt.implicit_thesis import find_implicit_theses, DEFAULT_MIN_SIM as THESIS_MIN_SIM
+from basalt.drift import find_drift, DEFAULT_WINDOW_DAYS as DRIFT_WINDOW_DAYS
 from basalt.audit import (
     record_finding,
     audit_pending,
@@ -60,6 +61,7 @@ from basalt.serialize import (
     connection_to_dict,
     contradiction_to_dict,
     implicit_thesis_to_dict,
+    drift_to_dict,
     audit_result_to_dict,
     track_record_to_dict,
     with_falsification,
@@ -141,7 +143,7 @@ def basalt_brief(section: str = "buried-insight", top: int = 1, vault_aware: boo
     Returns the same JSON shape as `basalt brief --format json`.
     """
     section_key = section.strip().lower()
-    valid = {"buried-insight", "connection", "contradiction", "implicit-thesis", "all"}
+    valid = {"buried-insight", "connection", "contradiction", "implicit-thesis", "drift", "all"}
     if section_key not in valid:
         raise ValueError(f"section must be one of {sorted(valid)}, got {section!r}")
     top = max(1, min(10, int(top)))
@@ -186,6 +188,14 @@ def basalt_brief(section: str = "buried-insight", top: int = 1, vault_aware: boo
             ]
             for c in clusters:
                 record_finding(conn, "implicit-thesis", c)
+        if section_key in ("drift", "all"):
+            drifts = find_drift(conn, top_n=1) or []
+            payload["findings"]["drift"] = [
+                with_falsification(drift_to_dict(d), "drift", d)
+                for d in drifts
+            ]
+            for d in drifts:
+                record_finding(conn, "drift", d)
         return payload
     finally:
         conn.close()
@@ -307,6 +317,46 @@ def basalt_thesis(top: int = 3, min_sim: float = THESIS_MIN_SIM) -> dict:
         }
         for c in clusters:
             record_finding(conn, "implicit-thesis", c)
+        return payload
+    finally:
+        conn.close()
+
+
+@mcp.tool(
+    annotations={
+        "title": "Surface Drift (stated vs lived priorities)",
+        "readOnlyHint": True,
+        "openWorldHint": False,
+        "idempotentHint": False,
+    }
+)
+def basalt_drift(days: int = DRIFT_WINDOW_DAYS) -> dict:
+    """Surface drift — projects whose lived priority (daily-note mentions
+    over the last N days) diverges from stated priority (project-folder
+    structure). Read-only.
+
+    The fourth and final site-advertised unlock. Needs ≥2 projects under
+    `02-Projects/` and ≥3 dated daily notes in the window.
+
+    Args:
+        days: window in days for daily-note mentions (7-365). Default 30.
+    """
+    days = max(7, min(365, int(days)))
+    conn = _open()
+    try:
+        drifts = find_drift(conn, window_days=days, top_n=1) or []
+        payload = {
+            "schema": SCHEMA_VERSION,
+            "verb": "drift",
+            "version": "v0",
+            "window_days": days,
+            "findings": [
+                with_falsification(drift_to_dict(d), "drift", d)
+                for d in drifts
+            ],
+        }
+        for d in drifts:
+            record_finding(conn, "drift", d)
         return payload
     finally:
         conn.close()

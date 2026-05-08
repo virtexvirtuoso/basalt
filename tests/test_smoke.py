@@ -26,6 +26,7 @@ from basalt.buried import (
 from basalt.connection import find_connections, _top_folder
 from basalt.contradiction import find_contradictions, _contradiction_evidence
 from basalt.implicit_thesis import find_implicit_theses
+from basalt.drift import find_drift, _extract_project_name, _is_daily_note
 from basalt.audit import (
     record_finding, audit_pending, track_record,
     falsification_rules_for,
@@ -322,7 +323,10 @@ def test_mcp_server_module_loads_and_registers_expected_tools():
     # FastMCP exposes a tool manager; tool names must match the plan.
     assert hasattr(mcp, "_tool_manager"), "FastMCP shape changed — adjust this test"
     tool_names = {t.name for t in mcp._tool_manager.list_tools()}
-    expected = {"basalt_brief", "basalt_connection", "basalt_contradiction", "basalt_thesis", "basalt_audit"}
+    expected = {
+        "basalt_brief", "basalt_connection", "basalt_contradiction",
+        "basalt_thesis", "basalt_drift", "basalt_audit",
+    }
     assert tool_names == expected, f"expected {expected}; got {tool_names}"
 
 
@@ -594,6 +598,89 @@ def test_implicit_thesis_finds_cross_folder_cluster(tmp_path):
     expected = {"X/notes/HYPOTHESIS.md", "X/projects/STRATEGY.md", "Y/reading/Carse.md", "Y/journal/Tuesday.md"}
     overlap = member_set & expected
     assert len(overlap) >= 3, f"expected at least 3 of the seeded cluster surfaced; got {member_set}"
+
+
+def test_drift_extracts_project_name():
+    assert _extract_project_name("02-Projects/Atlas/HYPOTHESIS.md") == "Atlas"
+    assert _extract_project_name("Projects/Beacon/Strategy/Mon.md") == "Beacon"
+    assert _extract_project_name("01-Daily/2026-04-15.md") is None
+    assert _extract_project_name("README.md") is None
+
+
+def test_drift_recognizes_daily_notes():
+    is_daily, dn_date = _is_daily_note("01-Daily/2026-04-15.md", None)
+    assert is_daily and dn_date is not None
+    is_daily, _ = _is_daily_note("02-Projects/Atlas/note.md", "daily, project")
+    assert is_daily, "frontmatter tags should make it count as daily"
+    is_daily, _ = _is_daily_note("notes/random.md", None)
+    assert not is_daily
+
+
+def test_drift_finds_stated_vs_lived_divergence(tmp_path):
+    """Synthetic vault: Atlas is stated #1 (10 notes) but lived #2 (mentioned
+    rarely). Beacon is stated #2 (3 notes) but lived #1 (dominates daily notes).
+    The drift verb should surface this divergence."""
+    from datetime import date, timedelta
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+    today = date.today()
+
+    def _ins(rel: str, content: str = "body content " * 20, tags: str = "", days_ago: int = 0):
+        d = (today - timedelta(days=days_ago)).isoformat()
+        conn.execute(
+            "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash, tags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (rel, rel.rsplit("/", 1)[-1].replace(".md", ""),
+             rel, d, d, len(content.split()), content, rel, tags),
+        )
+
+    # Atlas: 10 stated notes, mentioned only 2 times in dailies
+    for i in range(10):
+        _ins(f"02-Projects/Atlas/n{i}.md")
+    # Beacon: 3 stated notes, mentioned 12 times in dailies (heavily lived)
+    for i in range(3):
+        _ins(f"02-Projects/Beacon/n{i}.md")
+    # Daily notes — 5 days, each mentioning Beacon a lot and Atlas a little
+    for d_ago in [1, 3, 5, 7, 10]:
+        body = (
+            "Today I worked on Beacon. Beacon shipping plan reviewed. Beacon production-ready. "
+            "Beacon CALIBRATION confirmed. Beacon decision-log entry filed. "
+            "Atlas review deferred."
+        )
+        _ins(f"01-Daily/{(today - timedelta(days=d_ago)).isoformat()}.md", content=body, tags="daily", days_ago=d_ago)
+    conn.commit()
+
+    drifts = find_drift(conn, today=today, window_days=30)
+    conn.close()
+    assert drifts, "expected a drift finding"
+    f = drifts[0]
+    # Atlas is overstated (more notes than mentions), Beacon is overworked (more mentions than notes)
+    assert f.headline_overworked is not None and f.headline_overworked.name == "Beacon"
+    assert f.headline_underworked is not None and f.headline_underworked.name == "Atlas"
+    # Beacon's lived share should exceed its stated share
+    beacon = next(s for s in f.shares if s.name == "Beacon")
+    assert beacon.drift_pct > 5
+    atlas = next(s for s in f.shares if s.name == "Atlas")
+    assert atlas.drift_pct < -5
+
+
+def test_drift_returns_empty_when_no_dailies(tmp_path):
+    """No daily notes → no drift signal → empty result."""
+    from datetime import date
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+    today = date.today().isoformat()
+    for proj in ("Atlas", "Beacon"):
+        for i in range(3):
+            conn.execute(
+                "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash, tags) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (f"02-Projects/{proj}/n{i}.md", f"n{i}", "n", today, today, 100, "body", f"{proj}-n{i}", ""),
+            )
+    conn.commit()
+    drifts = find_drift(conn)
+    conn.close()
+    assert drifts == [], "expected no drift findings when there are no daily notes"
 
 
 def test_implicit_thesis_skips_single_folder_short_span(tmp_path):

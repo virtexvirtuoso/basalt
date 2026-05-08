@@ -80,6 +80,54 @@ def connection_to_dict(p) -> dict:
     }
 
 
+def drift_to_dict(d) -> dict:
+    return {
+        "verb": "drift",
+        "schema": SCHEMA_VERSION,
+        "version": "v0",
+        "window_days": d.window_days,
+        "daily_note_count": d.daily_note_count,
+        "project_count": d.project_count,
+        "total_mentions": d.total_mentions,
+        "score": d.score,
+        "headline_overworked": (
+            {
+                "name": d.headline_overworked.name,
+                "stated_share": d.headline_overworked.stated_share,
+                "lived_share": d.headline_overworked.lived_share,
+                "drift_pct": d.headline_overworked.drift_pct,
+                "stated_rank": d.headline_overworked.stated_rank,
+                "lived_rank": d.headline_overworked.lived_rank,
+            }
+            if d.headline_overworked else None
+        ),
+        "headline_underworked": (
+            {
+                "name": d.headline_underworked.name,
+                "stated_share": d.headline_underworked.stated_share,
+                "lived_share": d.headline_underworked.lived_share,
+                "drift_pct": d.headline_underworked.drift_pct,
+                "stated_rank": d.headline_underworked.stated_rank,
+                "lived_rank": d.headline_underworked.lived_rank,
+            }
+            if d.headline_underworked else None
+        ),
+        "shares": [
+            {
+                "name": s.name,
+                "stated_notes": s.stated_notes,
+                "stated_share": s.stated_share,
+                "stated_rank": s.stated_rank,
+                "lived_mentions": s.lived_mentions,
+                "lived_share": s.lived_share,
+                "lived_rank": s.lived_rank,
+                "drift_pct": s.drift_pct,
+            }
+            for s in d.shares
+        ],
+    }
+
+
 def implicit_thesis_to_dict(t) -> dict:
     return {
         "verb": "implicit-thesis",

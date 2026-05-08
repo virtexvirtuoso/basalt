@@ -7,12 +7,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Planned (carried)
-- Drift verb (needs daily-note time-marker parser)
 - Implicit Thesis v1 — LLM synthesis pass that names the cluster's through-line
 - Contradiction v1 — LLM-based pairwise compatibility classifier
+- Drift v1 — auto-evaluation of `drift_resolved` falsification rules (re-run drift on current window)
 - Obsidian plugin v0.2 — sidebar pane, status bar, Smart Connections parasitism
 - One-click installer per Installer-Scope-2026-05-08.md
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` rules can fire
+
+## [0.0.8] — 2026-05-08
+
+### Added — Drift verb (closes 4/4 site-advertised unlocks)
+
+The site has advertised four unlocks since launch: Implicit Thesis,
+Contradiction, Drift, Connection. **All four now ship.** No more verb
+gap between what the page promises and what the CLI delivers.
+
+- **`basalt drift`** / **`basalt brief --section drift`** — surfaces
+  projects whose lived priority (daily-note mentions) diverges from
+  stated priority (project-folder structure). Output: stated top-3 +
+  lived top-3 + the headline drift narrative (*"Moonshot is stated #9
+  but lived #1; Virtuoso Platform is stated #2 but lived #7"*).
+- **`basalt_drift` MCP tool** — added to the MCP server. 6 tools now
+  registered.
+- **Falsification rules** for drift findings:
+  - `drift_resolved` per project (per direction): wrong if shares
+    re-converge within 30 days
+  - `structural_change`: falsify if the project list changes >25%
+    (jaccard < 0.75) — the drift was structural, not behavioural
+- 4 new smoke tests (project-name extraction, daily-note recognition,
+  end-to-end stated-vs-lived divergence detection, no-dailies guard).
+  27/27 tests pass.
+
+### Engineering
+
+- New `drift.py` (~210 LOC). Vault-portable conventions:
+  - Projects: `^(?:\d+[-_])?Projects/(<name>)/`
+  - Daily notes: filename `YYYY-MM-DD*.md` OR frontmatter tag `daily`
+- Project-name word-boundary regex sorted longest-first so "BTC Wiz"
+  matches before "BTC".
+- `audit.py` extended with drift rules + `structural_change`
+  evaluator using path-prefix scan against the current vault state.
+- `serialize.py`, `cli.py`, `mcp_server.py` all extended with the
+  `drift` verb. SECTIONS_PLANNED is now empty — all four shipped.
+
+### Verified live
+
+On Fernando's 1,683-note vault, 30d window: 179 daily notes, 39 projects,
+1,222 total mentions. Surfaced real divergences: Moonshot stated #9 →
+lived #1 (+15.9pp), Virtuoso Platform stated #2 → lived #7 (−9.0pp).
+
+## [0.0.7] — 2026-05-08
 - Implicit Thesis verb (needs claim ledger)
 - Drift verb (needs daily-note time-marker parser)
 - Contradiction v1 — LLM-based pairwise compatibility classifier on top of v0 candidates

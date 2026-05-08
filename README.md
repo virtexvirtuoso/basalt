@@ -1,11 +1,33 @@
+<p align="center">
+  <img src="docs/banner.svg" alt="Basalt — Your vault already knows. Go ask it." width="100%">
+</p>
+
 # Basalt
 
-> Reads your Markdown vault and surfaces what you believe but never wrote down.
+> **Reads your Markdown vault and surfaces what you believe but never wrote down.**
 
 ![Basalt — basalt demo running on a 14-note sample vault](docs/demo.gif)
 
-**The wedge:** Basalt is the only second-brain compiler in this category
-that **doesn't require Claude Code**, **doesn't write to your vault**, and
+## Who this is for
+
+You've written 400+ daily notes. They link to each other. They were useful
+in the moment. None of them feed into what you're working on now. The claim
+from six months ago that the last four weeks of work depend on is still in
+there — you just can't find it. **Basalt finds it.**
+
+You're a developer using Obsidian (or Logseq, or a folder of `.md` files)
+as project context for Claude / Cursor / your editor of choice. You don't
+want another note-taking methodology. You want your existing vault to do
+more for you, without moving anything, and without sending it anywhere.
+
+You've tried PARA, Zettelkasten, BASB, Smart Connections. They worked
+exactly as long as you were reading the book about them. **Basalt has no
+methodology to impose** — it sits on top of whatever you already have.
+
+## The wedge
+
+Basalt is the only second-brain compiler in this category that
+**doesn't require Claude Code**, **doesn't write to your vault**, and
 **doesn't make a single network call** in the Open tier. Standalone Python.
 Read-only. Local-first. Three load-bearing properties — every other shipped
 project in this space gives up at least one of them.
@@ -15,12 +37,13 @@ theses — and exposes it as cognitive verbs. It sits atop your existing
 vault. It does not replace your editor. It runs locally.
 
 The signature output is **The First Brief** — a single page with citation-
-grounded sections, each ending in a one-click commit. The site advertises
-four unlocks: **Implicit Thesis · Contradiction · Drift · Connection.**
+grounded sections, each ending in a one-click commit. Four unlocks, all shipping:
+**Implicit Thesis · Contradiction · Drift · Connection.**
 
-Status: **Phase 0 — Compiler skeleton in build.** Connection, Contradiction
-(v0 heuristic), and Buried Insight are shipped and pass on a 1,683-note
-vault. Implicit Thesis and Drift are scheduled for Phase 1. See
+Status: **Phase 0 complete.** All four site-advertised unlocks ship in v0.0.8,
+plus the bonus 5th unlock (Buried Insight) and a Calibration Layer that grades
+past findings. Verified on a 1,683-note production vault. Phase 1 adds LLM
+synthesis (named theses, classifier-validated contradictions). See
 [virtuosoai.dev/basalt](https://virtuosoai.dev/basalt/).
 
 ---
@@ -58,21 +81,23 @@ basalt index --vault ~/path/to/your-vault
 basalt brief --section all
 ```
 
-## Verbs shipped
+## Verbs shipped (4/4 site-advertised + 1 bonus)
 
 | Verb | Site language | What it actually does |
 |------|---------------|-----------------------|
-| **Buried Insight** | (a 5th, deeper unlock) | Surfaces a note you wrote once and never returned to, that recent notes still cite — explicit links plus semantic validators |
-| **Connection** | *"The two ideas in different folders that turn out to be the same idea."* | Pairs of notes across different top-level folders, no wikilink between them, embedding similarity ≥ 0.78 |
+| **Implicit Thesis** *(v0)* | *"The thing you keep saying without realizing you're saying the same thing."* | Tight-neighborhood (near-clique) clusters of 3-15 notes converging on an unnamed through-line. Centroid's load-bearing sentence is the proxy thesis statement |
 | **Contradiction** *(v0)* | *"The two notes you wrote that can't both be true."* | Pairs of same-topic notes whose load-bearing sentences carry asymmetric negation, reversal markers, or polarity pairs (`ship` ↔ `kill`, `works` ↔ `broken`). v0 is heuristic — output is candidates, not verdicts |
+| **Drift** | *"What you say is the priority versus what you actually spent the week on."* | Stated priority (project-folder note count) vs lived priority (daily-note mentions over a 30-day window). Surfaces the largest divergence — *"Moonshot is your stated #9 but lived #1"* |
+| **Connection** | *"The two ideas in different folders that turn out to be the same idea."* | Pairs of notes across different top-level folders, no wikilink between them, embedding similarity ≥ 0.78 |
+| **Buried Insight** | (bonus 5th unlock) | A note you wrote once and never returned to, that recent notes still cite — explicit links plus semantic validators |
 
-### Planned (Phase 1)
+### Planned (Phase 1 — LLM-augmented Pro tier)
 
-| Verb | Site language | What it needs |
-|------|---------------|---------------|
-| **Implicit Thesis** | *"The thing you keep saying without realizing you're saying the same thing."* | Claim ledger + cross-domain LLM clustering |
-| **Drift** | *"What you say is the priority versus what you actually spent the week on."* | Daily-note time-marker parser + stated-vs-lived priority diff |
-| **Contradiction v1** | (proven, not just candidate) | LLM pairwise compatibility classifier filtering v0 candidates |
+| Verb | Promotion | What it needs |
+|------|-----------|---------------|
+| **Implicit Thesis v1** | *named* — not just a cluster | LLM synthesis pass over the v0 cluster — produces the through-line sentence the user hasn't written |
+| **Contradiction v1** | *proven* — not just a candidate | LLM pairwise compatibility classifier filtering v0 heuristic candidates |
+| **Drift v1** | *auto-audited* | Re-run drift on the current window during `basalt audit` — auto-falsify drift findings whose shares re-converged |
 
 ## Commands
 
@@ -83,9 +108,12 @@ basalt brief --section all
 | `basalt brief` | Surface the strongest buried insight (default top 1) |
 | `basalt brief --section connection --top 3` | Surface 3 connections — same idea across folders, no wikilink |
 | `basalt brief --section contradiction --top 3` | Surface 3 contradiction candidates (v0) |
-| `basalt brief --section all` | Run every shipped verb in one pass |
-| `basalt connection --top 5` | Convenience: connections only |
-| `basalt contradiction --top 5` | Convenience: contradictions only |
+| `basalt brief --section implicit-thesis --top 2` | Surface 2 implicit theses (v0 cluster heuristic) |
+| `basalt brief --section drift` | Surface stated-vs-lived priority drift over the last 30 days |
+| `basalt brief --section all` | Run every shipped verb in one pass — 4 unlocks + Buried Insight |
+| `basalt thesis` / `basalt drift` / `basalt connection` / `basalt contradiction` | Convenience subcommands per verb |
+| `basalt audit` | Re-evaluate pending findings against the current vault — see your track record |
+| `basalt about` | Wordmark + the geological metaphor + schema version |
 | `basalt brief --strict-defaults` | Buried Insight only — fixed 180/90/180 thresholds vs vault-age-aware |
 
 Run `basalt --help` for everything.
