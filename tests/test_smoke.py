@@ -25,6 +25,7 @@ from basalt.buried import (
 )
 from basalt.connection import find_connections, _top_folder
 from basalt.contradiction import find_contradictions, _contradiction_evidence
+from basalt.implicit_thesis import find_implicit_theses
 from basalt.audit import (
     record_finding, audit_pending, track_record,
     falsification_rules_for,
@@ -307,20 +308,22 @@ def test_contradiction_finds_candidates_with_signals(tmp_path):
     assert matched, f"expected the synthetic pair surfaced; got: {[(p.note_a_path, p.note_b_path) for p in pairs]}"
 
 
-def test_mcp_server_module_loads_and_registers_four_tools():
-    """The MCP server module loads, FastMCP instance exists, exactly the four
-    expected tools are registered. This is the contract for any MCP client."""
+def test_mcp_server_module_loads_and_registers_expected_tools():
+    """The MCP server module loads, FastMCP instance exists, exactly the
+    expected tool set is registered. This is the contract for any MCP client."""
     try:
-        from basalt.mcp_server import mcp, basalt_brief, basalt_connection, basalt_contradiction, basalt_audit
+        from basalt.mcp_server import (
+            mcp, basalt_brief, basalt_connection, basalt_contradiction,
+            basalt_thesis, basalt_audit,
+        )
     except ImportError as e:
         pytest.skip(f"mcp package not installed: {e}")
 
     # FastMCP exposes a tool manager; tool names must match the plan.
     assert hasattr(mcp, "_tool_manager"), "FastMCP shape changed — adjust this test"
     tool_names = {t.name for t in mcp._tool_manager.list_tools()}
-    assert tool_names == {"basalt_brief", "basalt_connection", "basalt_contradiction", "basalt_audit"}, (
-        f"expected exactly the 4 v0 tools; got {tool_names}"
-    )
+    expected = {"basalt_brief", "basalt_connection", "basalt_contradiction", "basalt_thesis", "basalt_audit"}
+    assert tool_names == expected, f"expected {expected}; got {tool_names}"
 
 
 def test_mcp_server_audit_returns_track_record_on_empty_db(tmp_path):
@@ -533,6 +536,99 @@ def test_track_record_counts_by_status(tmp_path):
     assert tr.total == 5
     assert 19.5 < tr.confirmed_pct < 20.5
     assert 39.5 < tr.falsified_pct < 40.5
+
+
+def test_implicit_thesis_finds_cross_folder_cluster(tmp_path):
+    """Synthetic vault with 4 notes anchored on the same embedding base across
+    2 folders — implicit-thesis should surface the cluster with cluster_size=4."""
+    import numpy as np
+    from datetime import date, timedelta
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    rng = np.random.default_rng(23)
+    base = rng.standard_normal(64).astype(np.float32); base /= np.linalg.norm(base)
+    other = rng.standard_normal(64).astype(np.float32); other /= np.linalg.norm(other)
+
+    today = date.today()
+
+    def _ins(rel: str, content: str, anchor=base, days_ago: int = 0):
+        d = (today - timedelta(days=days_ago)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            (rel, rel, rel, d, d, len(content.split()), content, rel),
+        )
+        nid = cur.fetchone()[0]
+        v = (anchor + rng.standard_normal(64) * 0.04).astype(np.float32); v /= np.linalg.norm(v)
+        conn.execute(
+            "INSERT INTO embeddings (note_id, model, content_hash, dim, vec) VALUES (?, ?, ?, ?, ?)",
+            (nid, "fake", rel, 64, v.tobytes()),
+        )
+        return nid
+
+    # 4-note cluster about "the work that compounds is the work nobody asked for"
+    body = (
+        "The work that compounds is the work nobody asked for. "
+        "Every meaningful project I have shipped started this way. "
+        "The market does not reward what it knows it wants — it rewards what it discovers it needed. "
+        "I keep returning to this idea without naming it. "
+        "Whatever the next bet is, the test is whether anyone asked for it. If they did, it is probably late."
+    )
+    a = _ins("X/notes/HYPOTHESIS.md", body, days_ago=120)
+    b = _ins("X/projects/STRATEGY.md", body, days_ago=80)
+    c = _ins("Y/reading/Carse.md", body, days_ago=40)
+    d = _ins("Y/journal/Tuesday.md", body, days_ago=10)
+    # Filler — different anchor — must not pair with the cluster
+    for i in range(3):
+        _ins(f"Z/filler{i}.md", "Some unrelated body content " * 20, anchor=other, days_ago=60)
+    conn.commit()
+
+    clusters = find_implicit_theses(conn, top_n=3, min_sim=0.6)
+    conn.close()
+    assert clusters, "expected at least one implicit thesis cluster"
+    top = clusters[0]
+    assert top.cluster_size >= 3
+    assert top.folder_diversity >= 2 or top.span_days >= 30
+    member_set = set(top.member_paths)
+    expected = {"X/notes/HYPOTHESIS.md", "X/projects/STRATEGY.md", "Y/reading/Carse.md", "Y/journal/Tuesday.md"}
+    overlap = member_set & expected
+    assert len(overlap) >= 3, f"expected at least 3 of the seeded cluster surfaced; got {member_set}"
+
+
+def test_implicit_thesis_skips_single_folder_short_span(tmp_path):
+    """A cluster within one folder spanning only a few days is too narrow to
+    surface — confirms the diversity gate fires."""
+    import numpy as np
+    from datetime import date
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    rng = np.random.default_rng(31)
+    base = rng.standard_normal(64).astype(np.float32); base /= np.linalg.norm(base)
+    today = date.today().isoformat()
+
+    body = (
+        "The thesis: signal compounds with patience. " * 5 +
+        "We keep saying this but never naming it as such."
+    )
+    for i in range(5):
+        cur = conn.execute(
+            "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            (f"OneFolder/n{i}.md", f"n{i}", f"n{i}", today, today, len(body.split()), body, f"n{i}"),
+        )
+        nid = cur.fetchone()[0]
+        v = (base + rng.standard_normal(64) * 0.03).astype(np.float32); v /= np.linalg.norm(v)
+        conn.execute(
+            "INSERT INTO embeddings (note_id, model, content_hash, dim, vec) VALUES (?, ?, ?, ?, ?)",
+            (nid, "fake", f"n{i}", 64, v.tobytes()),
+        )
+    conn.commit()
+    clusters = find_implicit_theses(conn, top_n=3, min_sim=0.6)
+    conn.close()
+    # All in one folder, all created today — the diversity gate should drop the cluster
+    assert clusters == [], f"expected no clusters (all in one folder, single day); got {clusters}"
 
 
 def test_vault_aware_thresholds_scale_with_age(tmp_path):

@@ -42,6 +42,8 @@ def falsification_rules_for(verb: str, finding: Any) -> list[dict]:
         return _connection_rules(finding)
     if verb == "contradiction":
         return _contradiction_rules(finding)
+    if verb == "implicit-thesis":
+        return _implicit_thesis_rules(finding)
     return []
 
 
@@ -96,6 +98,41 @@ def _connection_rules(p) -> list[dict]:
     ]
 
 
+def _implicit_thesis_rules(t) -> list[dict]:
+    return [
+        {
+            "kind": "centroid_deleted",
+            "params": {"rel_path": t.centroid_path},
+            "text": (
+                f"wrong if {t.centroid_path} is deleted (the proxy thesis "
+                f"statement is gone — the cluster needs a new centroid)"
+            ),
+        },
+        {
+            "kind": "cluster_dispersed",
+            "params": {
+                "member_paths": list(t.member_paths),
+                "min_remaining": max(2, t.cluster_size - 2),
+            },
+            "text": (
+                f"wrong if more than 2 of the {t.cluster_size} cluster members "
+                f"are deleted within 90 days (the through-line dissolves)"
+            ),
+        },
+        {
+            "kind": "no_new_rephrasing",
+            "params": {
+                "member_paths": list(t.member_paths),
+                "grace_days": 90,
+            },
+            "text": (
+                "wrong if no new note expresses a similar claim within 90 days "
+                "(the convergence was a snapshot, not a recurring theme)"
+            ),
+        },
+    ]
+
+
 def _contradiction_rules(p) -> list[dict]:
     return [
         {
@@ -136,6 +173,11 @@ def _finding_key(verb: str, finding: Any) -> str:
     if verb == "contradiction":
         a, b = sorted([finding.note_a_path, finding.note_b_path])
         return f"{verb}:{a}|{b}"
+    if verb == "implicit-thesis":
+        # Sort member paths so the same cluster gets the same key regardless
+        # of internal order — even if the centroid changes.
+        members_key = "|".join(sorted(finding.member_paths))
+        return f"{verb}:{members_key}"
     return f"{verb}:?"
 
 
@@ -168,6 +210,18 @@ def _finding_payload(verb: str, finding: Any) -> dict:
             "note_b_quote": finding.note_b_quote,
             "similarity": finding.similarity,
             "signals": finding.signals,
+        }
+    if verb == "implicit-thesis":
+        return {
+            "centroid_path": finding.centroid_path,
+            "centroid_quote": finding.centroid_quote,
+            "centroid_quote_provenance": finding.centroid_quote_provenance,
+            "member_paths": list(finding.member_paths),
+            "member_quotes": list(finding.member_quotes),
+            "cluster_size": finding.cluster_size,
+            "folder_diversity": finding.folder_diversity,
+            "span_days": finding.span_days,
+            "mean_similarity": finding.mean_similarity,
         }
     return {}
 
@@ -333,6 +387,29 @@ def _evaluate_rule(
                     f"unresolved conflict"
                 )
         return "pending", ""
+
+    if kind == "centroid_deleted":
+        if p["rel_path"] not in state:
+            return "falsified", f"thesis centroid {p['rel_path']} no longer exists"
+        return "pending", ""
+
+    if kind == "cluster_dispersed":
+        members = p.get("member_paths", [])
+        remaining = sum(1 for m in members if m in state)
+        if age_days >= 90 and remaining < p.get("min_remaining", 2):
+            return "falsified", (
+                f"only {remaining} of {len(members)} cluster members remain after {age_days}d"
+            )
+        return "pending", ""
+
+    if kind == "no_new_rephrasing":
+        # v0: needs the same kind of "is the through-line still recurring?"
+        # check that the buried-insight `no_new_validators` rule needs.
+        # Mark as needs-review for now; v1 fixes by re-running implicit_thesis
+        # and checking if any new note joined the cluster.
+        if age_days < p.get("grace_days", 90):
+            return "pending", ""
+        return "pending", "v0: needs manual review (auto-evaluation not implemented)"
 
     return "pending", f"unknown rule kind {kind}"
 

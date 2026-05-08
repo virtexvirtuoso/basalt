@@ -17,6 +17,7 @@ from basalt.embed import ensure_embeddings
 from basalt.buried import find_buried_insight, find_buried_insights
 from basalt.connection import find_connections, ConnectionPair, DEFAULT_MIN_SIM as CONN_MIN_SIM
 from basalt.contradiction import find_contradictions, ContradictionPair, DEFAULT_MIN_SIM as CONT_MIN_SIM
+from basalt.implicit_thesis import find_implicit_theses, ThesisCluster, DEFAULT_MIN_SIM as THESIS_MIN_SIM
 from basalt.audit import (
     record_finding,
     render_falsification_lines,
@@ -28,6 +29,7 @@ from basalt.serialize import (
     buried_insight_to_dict,
     connection_to_dict,
     contradiction_to_dict,
+    implicit_thesis_to_dict,
     audit_result_to_dict,
     track_record_to_dict,
     with_falsification,
@@ -123,10 +125,9 @@ SAMPLE_VAULT  = Path(__file__).resolve().parent.parent.parent / "examples" / "sa
 DEMO_DB       = Path.home() / ".basalt" / "demo.db"
 
 # Section keys accepted by `basalt brief --section`
-SECTIONS_AVAILABLE = {"buried-insight", "connection", "contradiction", "all"}
-SECTIONS_SHIPPED   = ["buried-insight", "connection", "contradiction"]   # in render order
-SECTIONS_PLANNED   = {"implicit-thesis": "needs claim ledger (Phase 1)",
-                      "drift": "needs daily-note time-marker parser (Phase 1)"}
+SECTIONS_AVAILABLE = {"buried-insight", "connection", "contradiction", "implicit-thesis", "all"}
+SECTIONS_SHIPPED   = ["buried-insight", "connection", "contradiction", "implicit-thesis"]  # in render order
+SECTIONS_PLANNED   = {"drift": "needs daily-note time-marker parser (Phase 1)"}
 
 
 @app.command("index")
@@ -244,6 +245,14 @@ def cmd_brief(
                 ]
                 for p in pairs:
                     record_finding(conn, "contradiction", p)
+            if section_key in ("implicit-thesis", "all"):
+                clusters = find_implicit_theses(conn, top_n=top) or []
+                payload["findings"]["implicit_thesis"] = [
+                    with_falsification(implicit_thesis_to_dict(c), "implicit-thesis", c)
+                    for c in clusters
+                ]
+                for c in clusters:
+                    record_finding(conn, "implicit-thesis", c)
             _emit_json(payload)
             return
 
@@ -287,6 +296,19 @@ def cmd_brief(
                 _say_no_result(
                     "No contradictions surfaced.",
                     "v0 is heuristic and looks for explicit reversal markers. Absence is not evidence — it just means nothing is wearing a sign.",
+                )
+                raise typer.Exit(code=1)
+
+        if section_key in ("implicit-thesis", "all"):
+            clusters = find_implicit_theses(conn, top_n=top)
+            if clusters:
+                _render_implicit_theses(clusters)
+                for c in clusters:
+                    record_finding(conn, "implicit-thesis", c)
+            elif section_key == "implicit-thesis":
+                _say_no_result(
+                    "No implicit thesis surfaced.",
+                    "v0 looks for clusters of 3+ topically-convergent notes spanning ≥2 folders or ≥30 days. Either you're not converging yet, or your through-lines are too narrow to cluster.",
                 )
                 raise typer.Exit(code=1)
     finally:
@@ -452,6 +474,62 @@ def _render_contradictions(pairs: list[ContradictionPair]) -> None:
         console.print()
         _render_falsification("contradiction", p)
         console.print(Text("   ▸ Mark resolved     ▸ Open both     ▸ Dismiss as not-a-conflict", style="#D9824B"))
+
+    _print_signoff("brief")
+
+
+# ── Implicit Thesis rendering ───────────────────────────────────
+
+def _render_implicit_theses(clusters: list[ThesisCluster]) -> None:
+    if not clusters:
+        return
+    n = len(clusters)
+    title = "THE IMPLICIT THESIS" if n == 1 else f"IMPLICIT THESES  ({n})"
+    console.print()
+    console.rule(style="bright_black")
+    console.print()
+    console.print(Text(title, style="bold #D9824B"))
+    console.print(Text("─────────────────────", style="#7A7269"))
+    console.print(Text(
+        "the through-line you keep saying without realizing  ·  v0 cluster — proxy thesis is the centroid quote",
+        style="dim"))
+
+    for i, c in enumerate(clusters, 1):
+        if i > 1:
+            console.print()
+            console.print(Text("─────────────────────", style="#3A3A3A"))
+        console.print()
+        if n > 1:
+            console.print(Text(f"{i:02}.", style="bold #D9824B"))
+        console.print(Text.assemble(
+            ("cluster size ", "default"),
+            (f"{c.cluster_size}", "bold"),
+            ("  ·  folders ", "default"),
+            (f"{c.folder_diversity}", "bold"),
+            ("  ·  span ", "default"),
+            (f"{c.span_days}d", "bold"),
+            ("  ·  mean similarity ", "default"),
+            (f"{c.mean_similarity:.2f}", "bold"),
+        ))
+        console.print()
+        console.print(Text("  ▸ The proxy thesis (centroid)", style="#D9824B"))
+        console.print(Text(f"    {c.centroid_path}", style="italic #C9C0B4"))
+        for line in _wrap(c.centroid_quote, 72):
+            console.print(Text("       " + line, style="italic #EFE9E2"))
+        console.print(Text(f"       ({c.centroid_quote_provenance})", style="dim"))
+        console.print()
+        console.print(Text("  ▸ The rephrasings (other cluster members)", style="dim"))
+        # Skip the centroid in the rephrasings list
+        for path, quote, prov in zip(c.member_paths, c.member_quotes, c.member_quote_provenances):
+            if path == c.centroid_path:
+                continue
+            console.print(Text(f"    · {path}", style="italic #C9C0B4"))
+            for line in _wrap(quote, 70):
+                console.print(Text("       " + line, style="dim"))
+            console.print(Text(f"       ({prov})", style="dim"))
+        console.print()
+        _render_falsification("implicit-thesis", c)
+        console.print(Text("   ▸ Name the thesis     ▸ Open all     ▸ Dismiss as coincidence", style="#D9824B"))
 
     _print_signoff("brief")
 
@@ -633,6 +711,40 @@ def cmd_audit(
     _print_signoff("audit")
 
 
+@app.command("thesis")
+def cmd_thesis(
+    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    top: int = typer.Option(3, "--top", min=1, max=10),
+    min_sim: float = typer.Option(THESIS_MIN_SIM, "--min-sim", min=0.5, max=0.99),
+    fmt: str = typer.Option("text", "--format", "-f", help="Output format: 'text' or 'json'."),
+):
+    """Surface implicit theses — clusters of notes that converge on an unnamed through-line (v0 cluster heuristic)."""
+    conn = open_db(db)
+    clusters = find_implicit_theses(conn, top_n=top, min_sim=min_sim)
+    if fmt.strip().lower() == "json":
+        conn.close()
+        _emit_json({
+            "schema": SCHEMA_VERSION,
+            "verb": "implicit-thesis",
+            "version": "v0-cluster",
+            "min_sim": min_sim,
+            "findings": [with_falsification(implicit_thesis_to_dict(c), "implicit-thesis", c) for c in clusters or []],
+        })
+        return
+    if not clusters:
+        conn.close()
+        _say_no_result(
+            "No implicit thesis surfaced.",
+            "v0 needs ≥3 topically-convergent notes across ≥2 folders or ≥30 days.",
+        )
+        raise typer.Exit(code=1)
+    _print_banner()
+    _render_implicit_theses(clusters)
+    for c in clusters:
+        record_finding(conn, "implicit-thesis", c)
+    conn.close()
+
+
 @app.command("contradiction")
 def cmd_contradiction(
     db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
@@ -726,6 +838,11 @@ def cmd_demo(
             pairs = find_contradictions(conn, top_n=top)
             if pairs:
                 _render_contradictions(pairs)
+                any_rendered = True
+        if section_key in ("implicit-thesis", "all"):
+            clusters = find_implicit_theses(conn, top_n=top)
+            if clusters:
+                _render_implicit_theses(clusters)
                 any_rendered = True
         if not any_rendered:
             console.print("[yellow]No findings on the sample vault for the requested section(s).[/yellow]")

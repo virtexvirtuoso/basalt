@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Planned (carried)
+- Drift verb (needs daily-note time-marker parser)
+- Implicit Thesis v1 — LLM synthesis pass that names the cluster's through-line
+- Contradiction v1 — LLM-based pairwise compatibility classifier
+- Obsidian plugin v0.2 — sidebar pane, status bar, Smart Connections parasitism
+- One-click installer per Installer-Scope-2026-05-08.md
+- Calibration v1: word-count-at-log-time so `candidate_shrinks` rules can fire
 - Implicit Thesis verb (needs claim ledger)
 - Drift verb (needs daily-note time-marker parser)
 - Contradiction v1 — LLM-based pairwise compatibility classifier on top of v0 candidates
@@ -14,6 +20,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - PyPI publish of `basalt-vault[mcp]` to make `pip install basalt-vault[mcp]` work without source clone
 - MCP Registry submission once PyPI is live
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` and `either_shrinks` rules can fire
+
+## [0.0.7] — 2026-05-08
+
+### Added — Implicit Thesis verb (closes the 4/4 gallery promise)
+
+The site advertises four unlocks: Implicit Thesis, Contradiction, Drift,
+Connection. As of v0.0.7, three of four ship in code; only Drift remains
+as a Phase-1 item. The site's `basalt brief --section all` now produces a
+finding for every promised unlock except Drift.
+
+- **`basalt thesis`** / **`basalt brief --section implicit-thesis`** —
+  surfaces clusters of 3-15 notes converging on an unnamed through-line.
+  v0 is a tight-neighborhood (near-clique) heuristic: every pair in a
+  cluster must share cosine ≥ 0.72. The centroid's load-bearing sentence
+  stands as the proxy thesis statement; the user (or v1's LLM pass)
+  names the actual thesis.
+- **`basalt_thesis` MCP tool** — added to the MCP server alongside the
+  4 existing tools. 5 tools now registered.
+- **Falsification rules** for thesis findings: `centroid_deleted`,
+  `cluster_dispersed` (>2 members deleted), `no_new_rephrasing`.
+- **Calibration logging** — every thesis cluster gets a stable
+  finding_key derived from the sorted member paths, so re-running
+  `basalt brief` doesn't double-log even when the centroid changes.
+- 2 new smoke tests verify the cross-folder cluster surfaces and that
+  the diversity gate suppresses single-folder same-day clusters. 23/23
+  tests pass.
+
+### Engineering
+
+- New `implicit_thesis.py` (~270 LOC). Tight-neighborhood algorithm
+  outperforms connected-components on real vaults — at 1683 notes,
+  CC collapses into a single 1452-member component at any practical
+  threshold; near-clique clustering finds bounded thematic clusters.
+- `audit.py` extended with thesis rule generation, finding_key, and
+  payload serialization.
+- `serialize.py` extended with `implicit_thesis_to_dict`.
+- `cli.py` SECTIONS_SHIPPED now includes `implicit-thesis`; only `drift`
+  remains in SECTIONS_PLANNED.
+- `mcp_server.py` exposes `basalt_thesis` as a 5th tool with the same
+  read-only annotations as the others.
 
 ## [0.0.6] — 2026-05-08
 

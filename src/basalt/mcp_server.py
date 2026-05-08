@@ -48,6 +48,7 @@ from basalt.index import open_db
 from basalt.buried import find_buried_insights
 from basalt.connection import find_connections, DEFAULT_MIN_SIM as CONN_MIN_SIM
 from basalt.contradiction import find_contradictions, DEFAULT_MIN_SIM as CONT_MIN_SIM
+from basalt.implicit_thesis import find_implicit_theses, DEFAULT_MIN_SIM as THESIS_MIN_SIM
 from basalt.audit import (
     record_finding,
     audit_pending,
@@ -58,6 +59,7 @@ from basalt.serialize import (
     buried_insight_to_dict,
     connection_to_dict,
     contradiction_to_dict,
+    implicit_thesis_to_dict,
     audit_result_to_dict,
     track_record_to_dict,
     with_falsification,
@@ -125,19 +127,21 @@ def basalt_brief(section: str = "buried-insight", top: int = 1, vault_aware: boo
 
     Surfaces what the user wrote but never returned to (Buried Insight),
     pairs of notes that are the same idea in different folders (Connection),
-    and same-topic notes whose load-bearing claims disagree (Contradiction
-    v0 heuristic). Read-only on the vault. Logs each finding to the
-    calibration table for later audit.
+    same-topic notes whose load-bearing claims disagree (Contradiction v0
+    heuristic), and clusters of 3+ notes that converge on an unnamed
+    through-line (Implicit Thesis v0 cluster). Read-only on the vault.
+    Logs each finding to the calibration table for later audit.
 
     Args:
-        section: 'buried-insight', 'connection', 'contradiction', or 'all'.
+        section: 'buried-insight', 'connection', 'contradiction',
+            'implicit-thesis', or 'all'.
         top: top N findings per section (1-10).
         vault_aware: Buried-Insight only — derive thresholds from vault age.
 
     Returns the same JSON shape as `basalt brief --format json`.
     """
     section_key = section.strip().lower()
-    valid = {"buried-insight", "connection", "contradiction", "all"}
+    valid = {"buried-insight", "connection", "contradiction", "implicit-thesis", "all"}
     if section_key not in valid:
         raise ValueError(f"section must be one of {sorted(valid)}, got {section!r}")
     top = max(1, min(10, int(top)))
@@ -174,6 +178,14 @@ def basalt_brief(section: str = "buried-insight", top: int = 1, vault_aware: boo
             ]
             for p in pairs:
                 record_finding(conn, "contradiction", p)
+        if section_key in ("implicit-thesis", "all"):
+            clusters = find_implicit_theses(conn, top_n=top) or []
+            payload["findings"]["implicit_thesis"] = [
+                with_falsification(implicit_thesis_to_dict(c), "implicit-thesis", c)
+                for c in clusters
+            ]
+            for c in clusters:
+                record_finding(conn, "implicit-thesis", c)
         return payload
     finally:
         conn.close()
@@ -252,6 +264,49 @@ def basalt_contradiction(top: int = 3, min_sim: float = CONT_MIN_SIM) -> dict:
         }
         for p in pairs:
             record_finding(conn, "contradiction", p)
+        return payload
+    finally:
+        conn.close()
+
+
+@mcp.tool(
+    annotations={
+        "title": "Surface Implicit Theses (v0 cluster)",
+        "readOnlyHint": True,
+        "openWorldHint": False,
+        "idempotentHint": False,
+    }
+)
+def basalt_thesis(top: int = 3, min_sim: float = THESIS_MIN_SIM) -> dict:
+    """Surface implicit theses — clusters of 3+ topically-convergent notes
+    that converge on an unnamed through-line. v0 is a cluster heuristic;
+    the centroid's load-bearing sentence stands as the proxy thesis. The
+    user (or v1's LLM pass) names the actual thesis. Read-only.
+
+    A cluster qualifies when ≥3 notes share pairwise cosine ≥ `min_sim`
+    AND the cluster spans ≥2 distinct top-level folders OR ≥30 days.
+
+    Args:
+        top: top N clusters (1-10).
+        min_sim: pairwise cosine floor (0.5-0.99). Default 0.65.
+    """
+    top = max(1, min(10, int(top)))
+    min_sim = max(0.5, min(0.99, float(min_sim)))
+    conn = _open()
+    try:
+        clusters = find_implicit_theses(conn, top_n=top, min_sim=min_sim) or []
+        payload = {
+            "schema": SCHEMA_VERSION,
+            "verb": "implicit-thesis",
+            "version": "v0-cluster",
+            "min_sim": min_sim,
+            "findings": [
+                with_falsification(implicit_thesis_to_dict(c), "implicit-thesis", c)
+                for c in clusters
+            ],
+        }
+        for c in clusters:
+            record_finding(conn, "implicit-thesis", c)
         return payload
     finally:
         conn.close()

@@ -80,6 +80,41 @@ def connection_to_dict(p) -> dict:
     }
 
 
+def implicit_thesis_to_dict(t) -> dict:
+    return {
+        "verb": "implicit-thesis",
+        "schema": SCHEMA_VERSION,
+        "version": "v0-cluster",
+        "score": t.score,
+        "cluster_size": t.cluster_size,
+        "folder_diversity": t.folder_diversity,
+        "span_days": t.span_days,
+        "mean_similarity": t.mean_similarity,
+        "centroid": {
+            "rel_path": t.centroid_path,
+            "title": t.centroid_title,
+            "quote": t.centroid_quote,
+            "quote_provenance": t.centroid_quote_provenance,
+        },
+        "members": [
+            {
+                "rel_path": rel,
+                "title": title,
+                "folder": folder,
+                "quote": quote,
+                "quote_provenance": prov,
+            }
+            for rel, title, folder, quote, prov in zip(
+                t.member_paths,
+                t.member_titles,
+                t.member_folders,
+                t.member_quotes,
+                t.member_quote_provenances,
+            )
+        ],
+    }
+
+
 def contradiction_to_dict(p) -> dict:
     return {
         "verb": "contradiction",
