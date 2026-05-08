@@ -14,6 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - One-click installer per Installer-Scope-2026-05-08.md
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` rules can fire
 
+## [0.0.9] — 2026-05-08
+
+### Changed — basalt column banner
+
+Replaces the prior 5-row hexagon outline (which had a diagonal-meets-underscore
+visual seam at the top edge) with a 4-row vertical stack of hexagon glyphs
+(`⬡`). Geologically literal — real basalt columns at the Giant's Causeway,
+Devils Postpile, and Fingal's Cave are exactly this shape: hexagonal
+cross-sections stacked in vertical columns. The brand mark earns its name.
+
+- Wordmark *Basalt.* anchored to row 2; tagline to row 3.
+- Rows 1 and 4 are unanchored hexagon glyphs that frame the wordmark.
+- First-run greeting in `basalt index` switched to the same outline
+  hexagon (`⬡` U+2B21) for visual consistency. Was filled (`⬢` U+2B22).
+
 ## [0.0.8] — 2026-05-08
 
 ### Added — Drift verb (closes 4/4 site-advertised unlocks)

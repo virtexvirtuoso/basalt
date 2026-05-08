@@ -45,16 +45,20 @@ _PLAIN_STDOUT = not sys.stdout.isatty()
 
 
 # ── Brand chrome ────────────────────────────────────────────────
-# A single block of branding that prints at the top of standalone
-# command runs. Suppressed when piped (NO_COLOR / non-tty) and on
-# JSON output. Six lines, no animation, no box. Lets the brief breathe.
+# Basalt column — vertical stack of hexagonal cross-sections. Real
+# basalt columns at the Giant's Causeway, Devils Postpile, Fingal's
+# Cave look exactly like this. The brand mark earns its name.
+#
+# Wordmark + tagline anchored to row 2 + 3; rows 1 and 4 frame them
+# with hexagon glyphs above and below. No diagonal-meets-underscore
+# alignment seam. No backslash-escape gotchas. Suppressed when piped
+# (NO_COLOR / non-tty) and on JSON output.
 
 BANNER_LINES = (
-    "       [#D9824B]___[/]",
-    "      [#D9824B]\u2571[/]   [#D9824B]\u2572[/]",
-    "     [#D9824B]\u2571[/]     [#D9824B]\u2572[/]      [#EFE9E2]Basalt[/][bold #D9824B].[/]",
-    "     [#D9824B]\u2572[/]     [#D9824B]\u2571[/]      [dim]reads your vault, surfaces what you believe.[/]",
-    "      [#D9824B]\u2572[/]___[#D9824B]\u2571[/]",
+    "   [#D9824B]\u2b21[/]",
+    "   [#D9824B]\u2b21[/]   [#EFE9E2]Basalt[/][bold #D9824B].[/]",
+    "   [#D9824B]\u2b21[/]   [dim]reads your vault, surfaces what you believe.[/]",
+    "   [#D9824B]\u2b21[/]",
 )
 
 
@@ -110,7 +114,7 @@ def _maybe_first_run_greeting(conn) -> None:
     if row is not None:
         return
     console.print()
-    console.print("  [#D9824B]\u2b22[/]  [#EFE9E2]First index.[/]")
+    console.print("  [#D9824B]\u2b21[/]  [#EFE9E2]First index.[/]")
     console.print("  [dim]Basalt will not write to your vault. It reads, indexes, and waits.[/]")
     console.print("  [dim]When this finishes, run `basalt brief` to see what's been sitting there.[/]")
     console.print()
