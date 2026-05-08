@@ -2,6 +2,8 @@
 
 > Reads your Markdown vault and surfaces what you believe but never wrote down.
 
+![Basalt — basalt demo running on a 14-note sample vault](docs/demo.gif)
+
 Basalt is a knowledge operating system that compiles a longitudinal model
 of *you* — claims, priorities, drift, theses — and exposes it as cognitive
 verbs. It sits atop your existing vault. It does not replace your editor.
