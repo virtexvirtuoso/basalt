@@ -166,11 +166,6 @@ def _render_buried_body(r, index: int | None = None) -> None:
     console.print(Text("   ▸ Promote to thesis     ▸ Open all     ▸ Snooze", style="#D9824B"))
 
 
-# Backwards-compatible single-result entry kept for any callers
-def _render_buried(r) -> None:
-    _render_buried_results([r])
-
-
 def _wrap(text: str, width: int) -> list[str]:
     out, line = [], ""
     for word in text.split():
