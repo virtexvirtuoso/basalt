@@ -8,9 +8,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Planned
 - MCP server wrapper exposing verbs as tools for any MCP host
-- Brief sections beyond Buried Insight: Implicit Thesis, Contradiction, Drift, Action Avoided
+- Implicit Thesis verb (needs claim ledger)
+- Drift verb (needs daily-note time-marker parser)
+- Contradiction v1 — LLM-based pairwise compatibility classifier on top of v0 candidates
 - Obsidian plugin shell
 - PyPI distribution as `basalt-vault` (the name `basalt` is taken)
+
+## [0.0.2] — 2026-05-08
+
+### Added
+- **`basalt connection`** — surfaces pairs of notes in *different folders*, with
+  no wikilink between them, whose embeddings say they are the same idea.
+  Reuses Buried Insight's hub-density penalty and load-bearing-sentence picker.
+  Includes a diversity pass so a single hub note can't dominate the ranking.
+- **`basalt contradiction`** — v0 heuristic. Surfaces *candidate* contradictions:
+  pairs of same-topic notes where load-bearing claims carry asymmetric negation,
+  reversal markers (*"actually"*, *"I was wrong"*, *"turns out"*), or polarity
+  pairs (*ship*↔*kill*, *works*↔*broken*, etc.). Honest disclosure: heuristic
+  produces false positives — output is candidates for the user (or an LLM
+  classifier in v1) to verify, not verdicts.
+- **`basalt brief --section <name>`** — accepts `buried-insight`, `connection`,
+  `contradiction`, or `all`. Bad-parameter errors clearly distinguish *unbuilt*
+  (Implicit Thesis, Drift) from *unknown* sections.
+- **`basalt demo --section <name>`** — same section selector for the bundled
+  sample-vault demo run.
+- 6 new smoke tests covering folder-boundary extraction, contradiction lexical
+  signals (negation, reversal, polarity pairs), and end-to-end Connection +
+  Contradiction on synthetic in-memory vaults. All 13 tests pass in <1s without
+  Ollama.
+
+### Engineering
+- ~440 LOC added across `connection.py`, `contradiction.py`, and `cli.py`
+  refactor. New modules reuse the existing buried.py primitives — no
+  duplicated logic for hub density, claim-quote extraction, or markdown
+  stripping.
+- 4 of 4 site-advertised unlocks now have a story: Connection (shipped),
+  Contradiction (shipped, v0), Implicit Thesis + Drift (clearly labelled
+  "needs Phase 1 component" in CLI errors).
 
 ## [0.0.1] — 2026-05-08
 

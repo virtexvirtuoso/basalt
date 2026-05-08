@@ -13,6 +13,8 @@ from basalt.vault import walk_vault
 from basalt.index import open_db, upsert_note, replace_links, resolve_link_targets
 from basalt.embed import ensure_embeddings
 from basalt.buried import find_buried_insight, find_buried_insights
+from basalt.connection import find_connections, ConnectionPair, DEFAULT_MIN_SIM as CONN_MIN_SIM
+from basalt.contradiction import find_contradictions, ContradictionPair, DEFAULT_MIN_SIM as CONT_MIN_SIM
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Basalt — read your vault, surface what you believe.")
@@ -23,6 +25,12 @@ DEFAULT_VAULT = Path.home() / "virtuoso-vault"
 DEFAULT_DB    = Path.home() / ".basalt" / "basalt.db"
 SAMPLE_VAULT  = Path(__file__).resolve().parent.parent.parent / "examples" / "sample-vault"
 DEMO_DB       = Path.home() / ".basalt" / "demo.db"
+
+# Section keys accepted by `basalt brief --section`
+SECTIONS_AVAILABLE = {"buried-insight", "connection", "contradiction", "all"}
+SECTIONS_SHIPPED   = ["buried-insight", "connection", "contradiction"]   # in render order
+SECTIONS_PLANNED   = {"implicit-thesis": "needs claim ledger (Phase 1)",
+                      "drift": "needs daily-note time-marker parser (Phase 1)"}
 
 
 @app.command("index")
@@ -67,28 +75,74 @@ def cmd_index(
 @app.command("brief")
 def cmd_brief(
     db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
-    section: str = typer.Option("buried-insight", "--section",
-                                help="Which Brief section to compute. Currently: buried-insight."),
+    section: str = typer.Option(
+        "buried-insight", "--section",
+        help=("Which Brief section to compute. One of: "
+              + ", ".join(SECTIONS_SHIPPED) + ", all. "
+              "Planned but unbuilt: " + ", ".join(SECTIONS_PLANNED) + "."),
+    ),
     vault_aware: bool = typer.Option(True, "--vault-aware/--strict-defaults",
-                                     help="Derive thresholds from vault age (default) or use fixed 180/90/180 defaults."),
+                                     help="Buried-Insight only — derive thresholds from vault age."),
     top: int = typer.Option(1, "--top", min=1, max=10,
-                            help="Surface the top N insights (default 1)."),
+                            help="Surface the top N findings per section (default 1)."),
 ):
-    """Generate a Brief section."""
-    if section != "buried-insight":
-        raise typer.BadParameter(f"section '{section}' not yet implemented; try 'buried-insight'")
+    """Generate one or more Brief sections.
+
+    The site advertises four unlocks: Implicit Thesis, Contradiction, Drift,
+    Connection. Currently shipped: Buried Insight (a 5th, deeper unlock),
+    Connection, and Contradiction (v0 heuristic). Implicit Thesis and Drift
+    are planned for Phase 1.
+    """
+    section_key = section.strip().lower()
+    if section_key in SECTIONS_PLANNED:
+        raise typer.BadParameter(
+            f"section '{section_key}' is not yet shipped — {SECTIONS_PLANNED[section_key]}.\n"
+            f"Try one of: {', '.join(SECTIONS_SHIPPED)}, all"
+        )
+    if section_key not in SECTIONS_AVAILABLE:
+        raise typer.BadParameter(
+            f"unknown section '{section_key}'. "
+            f"Try one of: {', '.join(SECTIONS_SHIPPED)}, all"
+        )
 
     conn = open_db(db)
-    results = find_buried_insights(conn, vault_aware=vault_aware, top_n=top)
-    conn.close()
+    try:
+        if section_key in ("buried-insight", "all"):
+            results = find_buried_insights(conn, vault_aware=vault_aware, top_n=top)
+            if results:
+                _render_buried_results(results)
+            elif section_key == "buried-insight":
+                _say_no_result("No buried insight found.",
+                               "The vault may be too young, too sparse, or too recently-edited everywhere.")
+                raise typer.Exit(code=1)
 
-    if not results:
-        console.print("[yellow]No buried insight found.[/yellow]")
-        console.print("[dim]The vault may be too young, too sparse, or too recently-edited everywhere.[/dim]")
-        raise typer.Exit(code=1)
+        if section_key in ("connection", "all"):
+            pairs = find_connections(conn, top_n=top)
+            if pairs:
+                _render_connections(pairs)
+            elif section_key == "connection":
+                _say_no_result("No latent connections found above the similarity floor.",
+                               f"min similarity = {CONN_MIN_SIM:.2f}; raise --top or seed the vault more.")
+                raise typer.Exit(code=1)
 
-    _render_buried_results(results)
+        if section_key in ("contradiction", "all"):
+            pairs = find_contradictions(conn, top_n=top)
+            if pairs:
+                _render_contradictions(pairs)
+            elif section_key == "contradiction":
+                _say_no_result("No contradiction candidates found.",
+                               "v0 is heuristic — surface text needs explicit reversal/negation markers.")
+                raise typer.Exit(code=1)
+    finally:
+        conn.close()
 
+
+def _say_no_result(headline: str, hint: str) -> None:
+    console.print(f"[yellow]{headline}[/yellow]")
+    console.print(f"[dim]{hint}[/dim]")
+
+
+# ── Buried Insight rendering (existing) ─────────────────────────
 
 def _render_buried_results(results: list) -> None:
     """Render one or more buried insights with a single header + threshold line."""
@@ -166,6 +220,95 @@ def _render_buried_body(r, index: int | None = None) -> None:
     console.print(Text("   ▸ Promote to thesis     ▸ Open all     ▸ Snooze", style="#D9824B"))
 
 
+# ── Connection rendering ────────────────────────────────────────
+
+def _render_connections(pairs: list[ConnectionPair]) -> None:
+    if not pairs:
+        return
+    n = len(pairs)
+    title = "THE CONNECTION" if n == 1 else f"CONNECTIONS  ({n})"
+    console.print()
+    console.rule(style="bright_black")
+    console.print()
+    console.print(Text(title, style="bold #D9824B"))
+    console.print(Text("─────────────────────", style="#7A7269"))
+    console.print(Text(
+        "two ideas in different folders that turn out to be the same idea",
+        style="dim"))
+
+    for i, p in enumerate(pairs, 1):
+        if i > 1:
+            console.print()
+            console.print(Text("─────────────────────", style="#3A3A3A"))
+        console.print()
+        if n > 1:
+            console.print(Text(f"{i:02}.", style="bold #D9824B"))
+        console.print(Text.assemble(
+            ("similarity ", "default"),
+            (f"{p.similarity:.2f}", "bold"),
+            ("  ·  no wikilink between them", "dim"),
+        ))
+        console.print()
+        _render_pair_side("A", p.note_a_path, p.note_a_quote, p.note_a_quote_provenance)
+        console.print()
+        _render_pair_side("B", p.note_b_path, p.note_b_quote, p.note_b_quote_provenance)
+        console.print()
+        console.print(Text("   ▸ Link A ↔ B     ▸ Open both     ▸ Dismiss", style="#D9824B"))
+
+    console.print()
+    console.rule(style="bright_black")
+
+
+# ── Contradiction rendering ─────────────────────────────────────
+
+def _render_contradictions(pairs: list[ContradictionPair]) -> None:
+    if not pairs:
+        return
+    n = len(pairs)
+    title = "THE CONTRADICTION" if n == 1 else f"CONTRADICTIONS  ({n})"
+    console.print()
+    console.rule(style="bright_black")
+    console.print()
+    console.print(Text(title, style="bold #D9824B"))
+    console.print(Text("─────────────────────", style="#7A7269"))
+    console.print(Text(
+        "two notes whose load-bearing claims appear to disagree  ·  v0 heuristic — verify before acting",
+        style="dim"))
+
+    for i, p in enumerate(pairs, 1):
+        if i > 1:
+            console.print()
+            console.print(Text("─────────────────────", style="#3A3A3A"))
+        console.print()
+        if n > 1:
+            console.print(Text(f"{i:02}.", style="bold #D9824B"))
+        console.print(Text.assemble(
+            ("topical similarity ", "default"),
+            (f"{p.similarity:.2f}", "bold"),
+            ("  ·  contradiction signals: ", "default"),
+            (", ".join(p.signals) if p.signals else "—", "italic #C9C0B4"),
+        ))
+        console.print()
+        _render_pair_side("A", p.note_a_path, p.note_a_quote, p.note_a_quote_provenance)
+        console.print()
+        _render_pair_side("B", p.note_b_path, p.note_b_quote, p.note_b_quote_provenance)
+        console.print()
+        console.print(Text("   ▸ Mark resolved     ▸ Open both     ▸ Dismiss as not-a-conflict", style="#D9824B"))
+
+    console.print()
+    console.rule(style="bright_black")
+
+
+def _render_pair_side(label: str, rel_path: str, quote: str, provenance: str) -> None:
+    console.print(Text.assemble(
+        (f"  {label}  ", "bold #D9824B"),
+        (rel_path, "italic #C9C0B4"),
+    ))
+    for line in _wrap(quote, 72):
+        console.print(Text("     " + line, style="italic #EFE9E2"))
+    console.print(Text(f"     ({provenance})", style="dim"))
+
+
 def _wrap(text: str, width: int) -> list[str]:
     out, line = [], ""
     for word in text.split():
@@ -179,10 +322,50 @@ def _wrap(text: str, width: int) -> list[str]:
     return out
 
 
+# ── Convenience subcommands (thin wrappers around `brief --section`) ─
+
+@app.command("connection")
+def cmd_connection(
+    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    top: int = typer.Option(3, "--top", min=1, max=10),
+    min_sim: float = typer.Option(CONN_MIN_SIM, "--min-sim", min=0.5, max=0.99),
+):
+    """Surface latent connections — same idea written in different folders, no wikilink between them."""
+    conn = open_db(db)
+    pairs = find_connections(conn, top_n=top, min_sim=min_sim)
+    conn.close()
+    if not pairs:
+        _say_no_result("No latent connections found above the similarity floor.",
+                       f"min similarity = {min_sim:.2f}; lower it or seed the vault more.")
+        raise typer.Exit(code=1)
+    _render_connections(pairs)
+
+
+@app.command("contradiction")
+def cmd_contradiction(
+    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    top: int = typer.Option(3, "--top", min=1, max=10),
+    min_sim: float = typer.Option(CONT_MIN_SIM, "--min-sim", min=0.5, max=0.99),
+):
+    """Surface candidate contradictions — pairs of same-topic notes with opposing surface markers (v0 heuristic)."""
+    conn = open_db(db)
+    pairs = find_contradictions(conn, top_n=top, min_sim=min_sim)
+    conn.close()
+    if not pairs:
+        _say_no_result("No contradiction candidates found.",
+                       "v0 is heuristic — surface text needs explicit reversal/negation markers.")
+        raise typer.Exit(code=1)
+    _render_contradictions(pairs)
+
+
 @app.command("demo")
 def cmd_demo(
     embed_model: str = typer.Option("nomic-embed-text", "--embed-model"),
     top: int = typer.Option(1, "--top", min=1, max=5),
+    section: str = typer.Option(
+        "buried-insight", "--section",
+        help="Which section to demo. One of: " + ", ".join(SECTIONS_SHIPPED) + ", all.",
+    ),
 ):
     """Index the bundled sample vault and run a Brief — no setup, no vault needed.
 
@@ -220,15 +403,31 @@ def cmd_demo(
     console.print(f"  [green]✓[/green] {computed} embedded · {skipped} cached")
     conn.close()
 
-    # Now run the brief against the demo DB
+    # Now run the requested brief section(s) against the demo DB
+    section_key = section.strip().lower()
     conn = open_db(DEMO_DB)
-    results = find_buried_insights(conn, vault_aware=True, top_n=top)
-    conn.close()
-    if not results:
-        console.print("[yellow]No buried insight found in the sample vault.[/yellow]")
-        console.print("[dim]This shouldn't happen — the sample is designed to produce one.[/dim]")
-        raise typer.Exit(code=1)
-    _render_buried_results(results)
+    try:
+        any_rendered = False
+        if section_key in ("buried-insight", "all"):
+            results = find_buried_insights(conn, vault_aware=True, top_n=top)
+            if results:
+                _render_buried_results(results)
+                any_rendered = True
+        if section_key in ("connection", "all"):
+            pairs = find_connections(conn, top_n=top)
+            if pairs:
+                _render_connections(pairs)
+                any_rendered = True
+        if section_key in ("contradiction", "all"):
+            pairs = find_contradictions(conn, top_n=top)
+            if pairs:
+                _render_contradictions(pairs)
+                any_rendered = True
+        if not any_rendered:
+            console.print("[yellow]No findings on the sample vault for the requested section(s).[/yellow]")
+            raise typer.Exit(code=1)
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
