@@ -4,10 +4,15 @@
 
 ![Basalt — basalt demo running on a 14-note sample vault](docs/demo.gif)
 
-Basalt is a knowledge operating system that compiles a longitudinal model
-of *you* — claims, priorities, drift, theses — and exposes it as cognitive
-verbs. It sits atop your existing vault. It does not replace your editor.
-It runs locally.
+**The wedge:** Basalt is the only second-brain compiler in this category
+that **doesn't require Claude Code**, **doesn't write to your vault**, and
+**doesn't make a single network call** in the Open tier. Standalone Python.
+Read-only. Local-first. Three load-bearing properties — every other shipped
+project in this space gives up at least one of them.
+
+Basalt compiles a longitudinal model of *you* — claims, priorities, drift,
+theses — and exposes it as cognitive verbs. It sits atop your existing
+vault. It does not replace your editor. It runs locally.
 
 The signature output is **The First Brief** — a single page with citation-
 grounded sections, each ending in a one-click commit. The site advertises
