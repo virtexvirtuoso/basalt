@@ -307,6 +307,66 @@ def test_contradiction_finds_candidates_with_signals(tmp_path):
     assert matched, f"expected the synthetic pair surfaced; got: {[(p.note_a_path, p.note_b_path) for p in pairs]}"
 
 
+def test_json_serializers_produce_stable_schemas():
+    """Verb dataclasses serialize to dicts with the expected top-level keys.
+    These shapes are the contract for the upcoming MCP server — they must be stable."""
+    from basalt.serialize import (
+        buried_insight_to_dict, connection_to_dict, contradiction_to_dict,
+        audit_result_to_dict, track_record_to_dict, SCHEMA_VERSION,
+    )
+    from basalt.audit import TrackRecord, AuditResult
+    from types import SimpleNamespace
+
+    fake_buried = SimpleNamespace(
+        candidate=SimpleNamespace(
+            rel_path="x.md", title="x", stem="x", created=None, updated=None,
+            word_count=100, score=1.0, hub_density=0.1, hub_penalty=1.0, inbound_recent=3,
+        ),
+        quote="q", quote_provenance="p", vault_age_days=200,
+        thresholds={"min_age_days": 100},
+        validators=[],
+    )
+    d = buried_insight_to_dict(fake_buried)
+    assert d["verb"] == "buried-insight"
+    assert d["schema"] == SCHEMA_VERSION
+    assert d["rel_path"] == "x.md"
+    assert "validators" in d
+
+    fake_conn = SimpleNamespace(
+        note_a_id=1, note_a_path="A.md", note_a_title="A",
+        note_a_quote="aq", note_a_quote_provenance="ap",
+        note_b_id=2, note_b_path="B.md", note_b_title="B",
+        note_b_quote="bq", note_b_quote_provenance="bp",
+        similarity=0.9, score=0.85, a_hub_density=0.1, b_hub_density=0.1,
+    )
+    d = connection_to_dict(fake_conn)
+    assert d["verb"] == "connection"
+    assert d["note_a"]["rel_path"] == "A.md"
+
+    fake_contra = SimpleNamespace(
+        note_a_id=1, note_a_path="A.md", note_a_title="A",
+        note_a_quote="aq", note_a_quote_provenance="ap",
+        note_b_id=2, note_b_path="B.md", note_b_title="B",
+        note_b_quote="bq", note_b_quote_provenance="bp",
+        similarity=0.8, contradiction_score=2.0, score=1.6, signals=["asymmetric negation"],
+    )
+    d = contradiction_to_dict(fake_contra)
+    assert d["verb"] == "contradiction"
+    assert d["version"] == "v0-heuristic"
+    assert d["signals"] == ["asymmetric negation"]
+
+    a = AuditResult(brief_id=1, verb="connection", finding_key="k",
+                    rule_kind="still_unlinked", new_status="falsified",
+                    reason="no link", age_days=120)
+    d = audit_result_to_dict(a)
+    assert d["new_status"] == "falsified"
+
+    tr = TrackRecord(days=90, confirmed=2, pending=3, falsified=1, total=6)
+    d = track_record_to_dict(tr)
+    assert d["confirmed"] == 2
+    assert d["confirmed_pct"] == round(100.0 * 2 / 6, 1)
+
+
 def test_falsification_rules_per_verb_have_text():
     """Each verb's falsification rules must include human-readable `text` for CLI render."""
     from types import SimpleNamespace

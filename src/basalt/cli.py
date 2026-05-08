@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import sys
 import time
 from pathlib import Path
 
@@ -21,10 +23,34 @@ from basalt.audit import (
     audit_pending,
     track_record,
 )
+from basalt.serialize import (
+    SCHEMA_VERSION,
+    buried_insight_to_dict,
+    connection_to_dict,
+    contradiction_to_dict,
+    audit_result_to_dict,
+    track_record_to_dict,
+    with_falsification,
+)
+
+
+# Detect non-interactive stdout — strip Rich color codes when piped.
+# Maps directly onto cargo / ripgrep / fzf behavior. Lets `basalt brief | jq`
+# work without ANSI escapes mangling the output even in --format=text mode.
+_PLAIN_STDOUT = not sys.stdout.isatty()
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Basalt — read your vault, surface what you believe.")
-console = Console()
+# Auto-disable color/style when piped — keeps `basalt brief | jq` clean.
+console = Console(no_color=_PLAIN_STDOUT, force_terminal=False if _PLAIN_STDOUT else None)
+
+
+def _emit_json(payload: dict) -> None:
+    """Write a JSON document to stdout, no Rich formatting. Stable schema,
+    safe to pipe into `jq` or consume from an MCP server."""
+    sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 DEFAULT_VAULT = Path.home() / "virtuoso-vault"
@@ -91,6 +117,8 @@ def cmd_brief(
                                      help="Buried-Insight only — derive thresholds from vault age."),
     top: int = typer.Option(1, "--top", min=1, max=10,
                             help="Surface the top N findings per section (default 1)."),
+    fmt: str = typer.Option("text", "--format", "-f",
+                            help="Output format: 'text' (Rich-rendered, default) or 'json' (machine-readable)."),
 ):
     """Generate one or more Brief sections.
 
@@ -111,8 +139,47 @@ def cmd_brief(
             f"Try one of: {', '.join(SECTIONS_SHIPPED)}, all"
         )
 
+    fmt_key = fmt.strip().lower()
+    if fmt_key not in ("text", "json"):
+        raise typer.BadParameter(f"unknown --format '{fmt}', try text or json")
+
     conn = open_db(db)
     try:
+        # JSON path: collect findings, emit single JSON document, no Rich rendering.
+        if fmt_key == "json":
+            payload: dict = {
+                "schema": SCHEMA_VERSION,
+                "section": section_key,
+                "track_record": track_record_to_dict(track_record(conn, days=90)),
+                "findings": {},
+            }
+            if section_key in ("buried-insight", "all"):
+                results = find_buried_insights(conn, vault_aware=vault_aware, top_n=top) or []
+                payload["findings"]["buried_insight"] = [
+                    with_falsification(buried_insight_to_dict(r), "buried-insight", r)
+                    for r in results
+                ]
+                for r in results:
+                    record_finding(conn, "buried-insight", r)
+            if section_key in ("connection", "all"):
+                pairs = find_connections(conn, top_n=top) or []
+                payload["findings"]["connection"] = [
+                    with_falsification(connection_to_dict(p), "connection", p)
+                    for p in pairs
+                ]
+                for p in pairs:
+                    record_finding(conn, "connection", p)
+            if section_key in ("contradiction", "all"):
+                pairs = find_contradictions(conn, top_n=top) or []
+                payload["findings"]["contradiction"] = [
+                    with_falsification(contradiction_to_dict(p), "contradiction", p)
+                    for p in pairs
+                ]
+                for p in pairs:
+                    record_finding(conn, "contradiction", p)
+            _emit_json(payload)
+            return
+
         # Track-record header — show the bar at the top of the Brief if any
         # past briefs exist. Establishes calibration as a first-class concept.
         _maybe_render_track_record(conn)
@@ -394,11 +461,21 @@ def cmd_connection(
     db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
     top: int = typer.Option(3, "--top", min=1, max=10),
     min_sim: float = typer.Option(CONN_MIN_SIM, "--min-sim", min=0.5, max=0.99),
+    fmt: str = typer.Option("text", "--format", "-f",
+                            help="Output format: 'text' or 'json'."),
 ):
     """Surface latent connections — same idea written in different folders, no wikilink between them."""
     conn = open_db(db)
     pairs = find_connections(conn, top_n=top, min_sim=min_sim)
     conn.close()
+    if fmt.strip().lower() == "json":
+        _emit_json({
+            "schema": SCHEMA_VERSION,
+            "verb": "connection",
+            "min_sim": min_sim,
+            "findings": [with_falsification(connection_to_dict(p), "connection", p) for p in pairs or []],
+        })
+        return
     if not pairs:
         _say_no_result("No latent connections found above the similarity floor.",
                        f"min similarity = {min_sim:.2f}; lower it or seed the vault more.")
@@ -411,6 +488,8 @@ def cmd_audit(
     db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
     days: int = typer.Option(90, "--days", min=7, max=730,
                              help="Track-record window in days (default 90)."),
+    fmt: str = typer.Option("text", "--format", "-f",
+                            help="Output format: 'text' or 'json'."),
 ):
     """Re-evaluate pending briefs against the current vault state.
 
@@ -427,6 +506,15 @@ def cmd_audit(
         tr = track_record(conn, days=days)
     finally:
         conn.close()
+
+    if fmt.strip().lower() == "json":
+        _emit_json({
+            "schema": SCHEMA_VERSION,
+            "verb": "audit",
+            "verdicts": [audit_result_to_dict(a) for a in results],
+            "track_record": track_record_to_dict(tr),
+        })
+        return
 
     console.print()
     console.rule(style="bright_black")
@@ -483,11 +571,22 @@ def cmd_contradiction(
     db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
     top: int = typer.Option(3, "--top", min=1, max=10),
     min_sim: float = typer.Option(CONT_MIN_SIM, "--min-sim", min=0.5, max=0.99),
+    fmt: str = typer.Option("text", "--format", "-f",
+                            help="Output format: 'text' or 'json'."),
 ):
     """Surface candidate contradictions — pairs of same-topic notes with opposing surface markers (v0 heuristic)."""
     conn = open_db(db)
     pairs = find_contradictions(conn, top_n=top, min_sim=min_sim)
     conn.close()
+    if fmt.strip().lower() == "json":
+        _emit_json({
+            "schema": SCHEMA_VERSION,
+            "verb": "contradiction",
+            "version": "v0-heuristic",
+            "min_sim": min_sim,
+            "findings": [with_falsification(contradiction_to_dict(p), "contradiction", p) for p in pairs or []],
+        })
+        return
     if not pairs:
         _say_no_result("No contradiction candidates found.",
                        "v0 is heuristic — surface text needs explicit reversal/negation markers.")

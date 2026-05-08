@@ -7,13 +7,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Planned
-- MCP server wrapper exposing verbs as tools for any MCP host
+- MCP server wrapper exposing verbs as tools for any MCP host (now unblocked by 0.0.4 JSON output)
 - Implicit Thesis verb (needs claim ledger)
 - Drift verb (needs daily-note time-marker parser)
 - Contradiction v1 — LLM-based pairwise compatibility classifier on top of v0 candidates
 - Obsidian plugin shell
 - PyPI distribution as `basalt-vault` (the name `basalt` is taken)
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` and `either_shrinks` rules can fire
+
+## [0.0.4] — 2026-05-08
+
+### Added — `--format=json` across the CLI
+
+Foundation for the upcoming MCP server. Every verb now has a stable
+machine-readable schema, ready to pipe into `jq` or wrap as an MCP tool.
+
+- **`basalt brief --format json`** — full JSON document with schema version,
+  track record, and findings grouped by verb. Each finding ships with its
+  falsification rules so the calibration contract reaches the consumer.
+- **`basalt connection --format json`** — single-verb pairs with similarity,
+  hub densities, falsification rules.
+- **`basalt contradiction --format json`** — pairs with topical similarity,
+  contradiction signals fired, v0-heuristic version flag, falsification.
+- **`basalt audit --format json`** — verdict list + track record. MCP hosts
+  can poll this to surface track-record changes.
+- **`SCHEMA_VERSION = 1`** — explicit versioning so future schema breaks are
+  observable.
+- **`isatty()` color auto-detection** — `basalt brief | less` no longer
+  produces ANSI escape soup. Rich rendering only when stdout is a real TTY.
+- 1 new smoke test verifies serializer schemas. 19/19 pass.
+
+### Engineering
+
+- New `serialize.py` module — ~140 LOC of pure mapping functions. No state.
+  Reusable directly from the planned `mcp_server.py`.
 
 ## [0.0.3] — 2026-05-08
 
