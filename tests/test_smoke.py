@@ -25,6 +25,10 @@ from basalt.buried import (
 )
 from basalt.connection import find_connections, _top_folder
 from basalt.contradiction import find_contradictions, _contradiction_evidence
+from basalt.audit import (
+    record_finding, audit_pending, track_record,
+    falsification_rules_for,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -301,6 +305,140 @@ def test_contradiction_finds_candidates_with_signals(tmp_path):
     assert pairs, "expected at least one contradiction candidate"
     matched = any({p.note_a_id, p.note_b_id} == {a_id, b_id} for p in pairs)
     assert matched, f"expected the synthetic pair surfaced; got: {[(p.note_a_path, p.note_b_path) for p in pairs]}"
+
+
+def test_falsification_rules_per_verb_have_text():
+    """Each verb's falsification rules must include human-readable `text` for CLI render."""
+    from types import SimpleNamespace
+    fake_buried = SimpleNamespace(candidate=SimpleNamespace(rel_path="x.md"))
+    rules = falsification_rules_for("buried-insight", fake_buried)
+    assert rules and all("text" in r for r in rules)
+    assert any("60 days" in r["text"] for r in rules)
+
+    fake_conn = SimpleNamespace(note_a_path="A.md", note_b_path="B.md")
+    rules = falsification_rules_for("connection", fake_conn)
+    assert rules and all("text" in r for r in rules)
+
+    fake_contra = SimpleNamespace(note_a_path="A.md", note_b_path="B.md")
+    rules = falsification_rules_for("contradiction", fake_contra)
+    assert rules and all("text" in r for r in rules)
+
+
+def test_record_finding_is_idempotent_per_finding_key(tmp_path):
+    """Running the same brief twice for the same finding doesn't double-log."""
+    from types import SimpleNamespace
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+    fake = SimpleNamespace(note_a_path="X/a.md", note_b_path="Y/b.md",
+                           note_a_quote="q1", note_a_quote_provenance="p",
+                           note_b_quote="q2", note_b_quote_provenance="p",
+                           similarity=0.9)
+    id1 = record_finding(conn, "connection", fake)
+    id2 = record_finding(conn, "connection", fake)
+    assert id1 is not None
+    assert id2 is None, "second insert with same key should be a no-op"
+    n = conn.execute("SELECT COUNT(*) FROM briefs").fetchone()[0]
+    assert n == 1
+    conn.close()
+
+
+def test_audit_falsifies_unlinked_connection_after_grace(tmp_path):
+    """Connection brief becomes 'falsified' if grace_days pass without a wikilink between A and B."""
+    from types import SimpleNamespace
+    from datetime import date, timedelta
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    # Seed two notes that exist but aren't linked.
+    today = date.today()
+    for rel in ("X/a.md", "Y/b.md"):
+        conn.execute(
+            "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (rel, rel, rel, today.isoformat(), today.isoformat(), 100, "body", rel),
+        )
+    conn.commit()
+
+    fake = SimpleNamespace(note_a_path="X/a.md", note_b_path="Y/b.md",
+                           note_a_quote="q", note_a_quote_provenance="p",
+                           note_b_quote="q", note_b_quote_provenance="p",
+                           similarity=0.9)
+    record_finding(conn, "connection", fake)
+    # Backdate so the grace window has lapsed
+    past = (today - timedelta(days=120)).isoformat()
+    conn.execute("UPDATE briefs SET created_at = ?", (past,))
+    conn.commit()
+
+    results = audit_pending(conn)
+    conn.close()
+    assert results, "expected at least one audit verdict"
+    # The "still_unlinked" rule should fire and falsify the brief
+    assert any(r.new_status == "falsified" and r.rule_kind == "still_unlinked" for r in results)
+
+
+def test_audit_confirms_linked_connection(tmp_path):
+    """Connection brief becomes 'confirmed' when user adds a wikilink between A and B."""
+    from types import SimpleNamespace
+    from datetime import date
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    today = date.today()
+    for rel in ("X/a.md", "Y/b.md"):
+        conn.execute(
+            "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (rel, rel, rel, today.isoformat(), today.isoformat(), 100, "body", rel),
+        )
+    conn.commit()
+    # Add the wikilink edge from a → b
+    a_id = conn.execute("SELECT id FROM notes WHERE rel_path = 'X/a.md'").fetchone()[0]
+    b_id = conn.execute("SELECT id FROM notes WHERE rel_path = 'Y/b.md'").fetchone()[0]
+    conn.execute(
+        "INSERT INTO links (from_note_id, target, target_note_id) VALUES (?, ?, ?)",
+        (a_id, "b", b_id),
+    )
+    conn.commit()
+
+    fake = SimpleNamespace(note_a_path="X/a.md", note_b_path="Y/b.md",
+                           note_a_quote="q", note_a_quote_provenance="p",
+                           note_b_quote="q", note_b_quote_provenance="p",
+                           similarity=0.9)
+    record_finding(conn, "connection", fake)
+    results = audit_pending(conn)
+    conn.close()
+    assert any(r.new_status == "confirmed" and r.rule_kind == "still_unlinked" for r in results)
+
+
+def test_track_record_counts_by_status(tmp_path):
+    """track_record() returns confirmed/pending/falsified counts within window."""
+    from datetime import date
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+    today = date.today().isoformat()
+    for status in ("pending", "pending", "confirmed", "falsified", "falsified"):
+        conn.execute(
+            "INSERT INTO briefs (verb, finding_key, finding_json, falsification, created_at, status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("buried-insight", f"k-{status}-?", "{}", "[]", today, status),
+        )
+    # SQLite needs unique key per insert — patch:
+    conn.execute("DELETE FROM briefs")
+    for i, status in enumerate(("pending", "pending", "confirmed", "falsified", "falsified")):
+        conn.execute(
+            "INSERT INTO briefs (verb, finding_key, finding_json, falsification, created_at, status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("buried-insight", f"k-{i}", "{}", "[]", today, status),
+        )
+    conn.commit()
+    tr = track_record(conn, days=90)
+    conn.close()
+    assert tr.confirmed == 1
+    assert tr.pending == 2
+    assert tr.falsified == 2
+    assert tr.total == 5
+    assert 19.5 < tr.confirmed_pct < 20.5
+    assert 39.5 < tr.falsified_pct < 40.5
 
 
 def test_vault_aware_thresholds_scale_with_age(tmp_path):

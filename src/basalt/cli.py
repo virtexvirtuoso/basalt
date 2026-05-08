@@ -15,6 +15,12 @@ from basalt.embed import ensure_embeddings
 from basalt.buried import find_buried_insight, find_buried_insights
 from basalt.connection import find_connections, ConnectionPair, DEFAULT_MIN_SIM as CONN_MIN_SIM
 from basalt.contradiction import find_contradictions, ContradictionPair, DEFAULT_MIN_SIM as CONT_MIN_SIM
+from basalt.audit import (
+    record_finding,
+    render_falsification_lines,
+    audit_pending,
+    track_record,
+)
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Basalt — read your vault, surface what you believe.")
@@ -107,10 +113,16 @@ def cmd_brief(
 
     conn = open_db(db)
     try:
+        # Track-record header — show the bar at the top of the Brief if any
+        # past briefs exist. Establishes calibration as a first-class concept.
+        _maybe_render_track_record(conn)
+
         if section_key in ("buried-insight", "all"):
             results = find_buried_insights(conn, vault_aware=vault_aware, top_n=top)
             if results:
                 _render_buried_results(results)
+                for r in results:
+                    record_finding(conn, "buried-insight", r)
             elif section_key == "buried-insight":
                 _say_no_result("No buried insight found.",
                                "The vault may be too young, too sparse, or too recently-edited everywhere.")
@@ -120,6 +132,8 @@ def cmd_brief(
             pairs = find_connections(conn, top_n=top)
             if pairs:
                 _render_connections(pairs)
+                for p in pairs:
+                    record_finding(conn, "connection", p)
             elif section_key == "connection":
                 _say_no_result("No latent connections found above the similarity floor.",
                                f"min similarity = {CONN_MIN_SIM:.2f}; raise --top or seed the vault more.")
@@ -129,6 +143,8 @@ def cmd_brief(
             pairs = find_contradictions(conn, top_n=top)
             if pairs:
                 _render_contradictions(pairs)
+                for p in pairs:
+                    record_finding(conn, "contradiction", p)
             elif section_key == "contradiction":
                 _say_no_result("No contradiction candidates found.",
                                "v0 is heuristic — surface text needs explicit reversal/negation markers.")
@@ -217,6 +233,8 @@ def _render_buried_body(r, index: int | None = None) -> None:
         console.print(Text(f"   {marker} {v.rel_path}  ({d}){sim}", style="dim"))
     console.print()
 
+    _render_falsification("buried-insight", r)
+
     console.print(Text("   ▸ Promote to thesis     ▸ Open all     ▸ Snooze", style="#D9824B"))
 
 
@@ -253,6 +271,7 @@ def _render_connections(pairs: list[ConnectionPair]) -> None:
         console.print()
         _render_pair_side("B", p.note_b_path, p.note_b_quote, p.note_b_quote_provenance)
         console.print()
+        _render_falsification("connection", p)
         console.print(Text("   ▸ Link A ↔ B     ▸ Open both     ▸ Dismiss", style="#D9824B"))
 
     console.print()
@@ -293,10 +312,56 @@ def _render_contradictions(pairs: list[ContradictionPair]) -> None:
         console.print()
         _render_pair_side("B", p.note_b_path, p.note_b_quote, p.note_b_quote_provenance)
         console.print()
+        _render_falsification("contradiction", p)
         console.print(Text("   ▸ Mark resolved     ▸ Open both     ▸ Dismiss as not-a-conflict", style="#D9824B"))
 
     console.print()
     console.rule(style="bright_black")
+
+
+# ── Calibration: falsification rules + track record ─────────────
+
+def _render_falsification(verb: str, finding) -> None:
+    """Render the inline falsification rules for a single finding.
+    Sets a verifiable expectation: this finding is wrong if you ever observe X."""
+    lines = render_falsification_lines(verb, finding)
+    if not lines:
+        return
+    console.print(Text("   ⊘ Falsification — this is wrong if:", style="#9A5C36"))
+    for line in lines:
+        wrapped = _wrap(line, 68)
+        if not wrapped:
+            continue
+        console.print(Text(f"      • {wrapped[0]}", style="dim"))
+        for cont in wrapped[1:]:
+            console.print(Text(f"        {cont}", style="dim"))
+    console.print()
+
+
+def _maybe_render_track_record(conn) -> None:
+    """If any past briefs exist, render a small track-record header at the
+    top of the Brief — bar chart of confirmed/pending/falsified over 90 days."""
+    tr = track_record(conn, days=90)
+    if tr.total == 0:
+        return
+    bar_w = 36
+    confirmed_w = round(bar_w * tr.confirmed / tr.total) if tr.total else 0
+    falsified_w = round(bar_w * tr.falsified / tr.total) if tr.total else 0
+    pending_w = bar_w - confirmed_w - falsified_w
+    bar = Text()
+    bar.append("  ")
+    bar.append("▓" * confirmed_w, style="#5C8C5A")   # green-ish for confirmed
+    bar.append("░" * pending_w, style="#7A7269")     # dim for pending
+    bar.append("▓" * falsified_w, style="#9A5C36")   # amber for falsified
+    bar.append(
+        f"  {tr.confirmed} confirmed · {tr.pending} pending · {tr.falsified} falsified  ({tr.total} total)",
+        style="dim",
+    )
+    console.print()
+    console.print(Text("─── TRACK RECORD ─── (last 90d)", style="dim"))
+    console.print(bar)
+    console.print(Text("  Run `basalt audit` to re-evaluate pending briefs against the current vault.", style="dim"))
+    console.print()
 
 
 def _render_pair_side(label: str, rel_path: str, quote: str, provenance: str) -> None:
@@ -339,6 +404,78 @@ def cmd_connection(
                        f"min similarity = {min_sim:.2f}; lower it or seed the vault more.")
         raise typer.Exit(code=1)
     _render_connections(pairs)
+
+
+@app.command("audit")
+def cmd_audit(
+    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    days: int = typer.Option(90, "--days", min=7, max=730,
+                             help="Track-record window in days (default 90)."),
+):
+    """Re-evaluate pending briefs against the current vault state.
+
+    Walks every brief still marked 'pending' in the calibration table, applies
+    its falsification rules, and updates each to 'confirmed' or 'falsified'
+    where the rule fires. Then prints the track-record summary.
+
+    This is the single feature that converts Basalt from "AI summary tool"
+    into "research log." Run it weekly — your track record compounds.
+    """
+    conn = open_db(db)
+    try:
+        results = audit_pending(conn)
+        tr = track_record(conn, days=days)
+    finally:
+        conn.close()
+
+    console.print()
+    console.rule(style="bright_black")
+    console.print()
+    console.print(Text("AUDIT", style="bold #D9824B"))
+    console.print(Text("─────────────────────", style="#7A7269"))
+
+    if results:
+        console.print(Text(f"{len(results)} brief{'s' if len(results) != 1 else ''} updated", style=""))
+        console.print()
+        for r in results:
+            symbol = "✓" if r.new_status == "confirmed" else "✗"
+            color  = "#5C8C5A" if r.new_status == "confirmed" else "#9A5C36"
+            console.print(Text.assemble(
+                (f"  {symbol} {r.new_status.upper():10} ", color),
+                (f"{r.verb:18} ", "default"),
+                (f"({r.age_days}d)  ", "dim"),
+                (r.finding_key, "italic #C9C0B4"),
+            ))
+            for line in _wrap(r.reason, 76):
+                console.print(Text(f"      {line}", style="dim"))
+            console.print()
+    else:
+        console.print(Text("no pending briefs changed status", style="dim"))
+        console.print()
+
+    # Track-record bar
+    bar_w = 40
+    if tr.total:
+        confirmed_w = round(bar_w * tr.confirmed / tr.total)
+        falsified_w = round(bar_w * tr.falsified / tr.total)
+        pending_w = bar_w - confirmed_w - falsified_w
+        bar = Text()
+        bar.append("  ")
+        bar.append("▓" * confirmed_w, style="#5C8C5A")
+        bar.append("░" * pending_w, style="#7A7269")
+        bar.append("▓" * falsified_w, style="#9A5C36")
+        console.print(Text(f"track record · last {tr.days}d", style="dim"))
+        console.print(bar)
+        console.print(Text(
+            f"  {tr.confirmed} confirmed · {tr.pending} pending · {tr.falsified} falsified  "
+            f"({tr.total} total · {tr.confirmed_pct:.0f}% confirmed · {tr.falsified_pct:.0f}% falsified)",
+            style="dim"
+        ))
+    else:
+        console.print(Text(f"no briefs in last {tr.days}d — run `basalt brief` to start tracking", style="dim"))
+
+    console.print()
+    console.rule(style="bright_black")
 
 
 @app.command("contradiction")

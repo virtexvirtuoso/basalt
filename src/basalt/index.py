@@ -50,6 +50,25 @@ CREATE TABLE IF NOT EXISTS meta (
     key             TEXT PRIMARY KEY,
     value           TEXT
 );
+
+-- Calibration layer: every Brief finding logged with falsification rules,
+-- re-evaluated on `basalt audit`. The longer the user runs Basalt, the
+-- more valuable their track record becomes.
+CREATE TABLE IF NOT EXISTS briefs (
+    id              INTEGER PRIMARY KEY,
+    verb            TEXT NOT NULL,
+    finding_key     TEXT NOT NULL,        -- stable id for dedup across runs
+    finding_json    TEXT NOT NULL,        -- full payload for re-eval + history
+    falsification   TEXT NOT NULL,        -- JSON array of {kind, params, text}
+    created_at      TEXT NOT NULL,        -- ISO date YYYY-MM-DD
+    status          TEXT NOT NULL DEFAULT 'pending',  -- pending/confirmed/falsified
+    verdict_at      TEXT,                  -- ISO date when status moved off pending
+    verdict_reason  TEXT                   -- why
+);
+CREATE INDEX IF NOT EXISTS idx_briefs_verb     ON briefs(verb);
+CREATE INDEX IF NOT EXISTS idx_briefs_finding  ON briefs(verb, finding_key);
+CREATE INDEX IF NOT EXISTS idx_briefs_status   ON briefs(status);
+CREATE INDEX IF NOT EXISTS idx_briefs_created  ON briefs(created_at);
 """
 
 

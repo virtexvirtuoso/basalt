@@ -13,6 +13,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Contradiction v1 — LLM-based pairwise compatibility classifier on top of v0 candidates
 - Obsidian plugin shell
 - PyPI distribution as `basalt-vault` (the name `basalt` is taken)
+- Calibration v1: word-count-at-log-time so `candidate_shrinks` and `either_shrinks` rules can fire
+
+## [0.0.3] — 2026-05-08
+
+### Added — Calibration Layer
+
+The single feature that converts Basalt from "AI summary tool" into
+"research log." Every finding now ships with falsifiable claims, every past
+finding gets re-evaluated, and every Brief shows your track record at the top.
+
+- **`basalt audit`** — re-walks pending briefs against current vault state,
+  applies each finding's falsification rules, updates status to `confirmed`
+  or `falsified` with verdict reason. Shows track-record bar.
+- **Falsification rules** rendered inline in every Brief finding — *"this is
+  wrong if you ever observe X."* Three rules per Buried Insight, two per
+  Connection, two per Contradiction.
+- **Track-record header** at top of `basalt brief` — confirmed/pending/falsified
+  bar over the last 90 days, once any past briefs exist.
+- **`briefs` SQLite table** logs every Brief finding with stable `finding_key`
+  for idempotency. Re-running `basalt brief` does not double-log identical findings.
+- **5 new smoke tests** covering rule generation per verb, idempotent recording,
+  end-to-end falsify (still_unlinked grace), end-to-end confirm (linked
+  connection), and track-record counting. 18/18 tests pass in <1s.
+
+### Engineering
+
+- New module `audit.py` — ~340 LOC. Schema, rule generation, recording,
+  evaluation, track record. Verb modules unchanged — calibration stays in
+  its own file.
+- v0 limits called out honestly: `candidate_shrinks` and `either_shrinks`
+  rules need original word_count at log time; v0 finding payload doesn't
+  preserve it. Rules log as pending; v1 fixes this.
+
+### Why this matters
+
+No competitor in this category ships calibration of past output. Eugeniughelbur's
+*"vault rewrites itself"* model destroys the historical signal needed for it.
+This is the single feature that compounds Basalt's switching cost: the longer
+a user runs Basalt, the more valuable their track record becomes.
 
 ## [0.0.2] — 2026-05-08
 
