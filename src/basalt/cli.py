@@ -45,20 +45,23 @@ _PLAIN_STDOUT = not sys.stdout.isatty()
 
 
 # ── Brand chrome ────────────────────────────────────────────────
-# Basalt formation — top-down view of a hexagonal tessellation in a
-# 3-4-5-4-3 diamond. Real basalt formations (Giant's Causeway,
-# Devils Postpile, Fingal's Cave) viewed from above tessellate this
-# way. The wordmark anchors to the widest row (5 hexagons) — the
-# visual core of the formation.
+# Basalt mark — single hexagon outline, the canonical brand glyph.
+# Matches the favicon + site SVG (a hexagonal cross-section through
+# a basalt column).
+#
+# Uses Unicode box-drawing diagonals U+2571 (╱) and U+2572 (╲)
+# instead of ASCII slashes — Rich's markup parser treats `\[` as
+# an escape, so a literal `\` immediately before any `[` renders
+# as `[/]` artifact. Unicode diagonals have no escape meaning.
 #
 # Suppressed when piped (NO_COLOR / non-tty) and on JSON output.
 
 BANNER_LINES = (
-    "       [#D9824B]\u2b21 \u2b21 \u2b21[/]",
-    "      [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21[/]",
-    "     [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21 \u2b21[/]    [#EFE9E2]Basalt[/][bold #D9824B].[/]",
-    "      [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21[/]     [dim]reads your vault, surfaces what you believe.[/]",
-    "       [#D9824B]\u2b21 \u2b21 \u2b21[/]",
+    "       [#D9824B]___[/]",
+    "      [#D9824B]\u2571[/]   [#D9824B]\u2572[/]",
+    "     [#D9824B]\u2571[/]     [#D9824B]\u2572[/]      [#EFE9E2]Basalt[/][bold #D9824B].[/]",
+    "     [#D9824B]\u2572[/]     [#D9824B]\u2571[/]      [dim]reads your vault, surfaces what you believe.[/]",
+    "      [#D9824B]\u2572[/]___[#D9824B]\u2571[/]",
 )
 
 

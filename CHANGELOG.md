@@ -14,6 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - One-click installer per Installer-Scope-2026-05-08.md
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` rules can fire
 
+## [0.0.11] — 2026-05-08
+
+### Changed — back to the single-hex outline (user-preferred)
+
+After trying the basalt column (v0.0.9) and the diamond honeycomb
+(v0.0.10), reverting to the original single hexagon outline shape —
+the canonical brand mark, matching the favicon + site SVG. The
+diamond and column were geologically richer but read as "decoration";
+the single hex reads as "the brand mark."
+
+This time rendered with Unicode box-drawing diagonals (U+2571 ╱,
+U+2572 ╲) instead of ASCII slashes — Rich's markup parser escapes
+`\[` to a literal `[`, so any `\` followed by `[` produced `[/]`
+artifacts. Unicode diagonals have no escape meaning and render clean.
+
 ## [0.0.10] — 2026-05-08
 
 ### Changed — basalt formation banner (diamond honeycomb)
