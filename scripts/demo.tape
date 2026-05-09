@@ -21,19 +21,19 @@ Type "cd ~/Projects/basalt && source .venv/bin/activate && setopt INTERACTIVE_CO
 Sleep 1s
 Show
 
-# Set the stage with two terminal comments (now valid in zsh)
-Type "# A 14-note sample vault. Watch Basalt find the buried insight."
-Sleep 600ms
+# Set the stage with a plain-English scene-setter
+Type "# What did my notes already know?"
+Sleep 400ms
 Enter
-Sleep 800ms
+Sleep 500ms
 
 # The actual run
 Type "basalt demo"
-Sleep 700ms
+Sleep 500ms
 Enter
 
-# Let it work — cold ~3s, warm ~1s. Buffer for safety.
-Sleep 5s
+# Let it work — cold ~3s, warm ~1s. Add a 1.5s thinking beat before output.
+Sleep 1.5s
 
-# Hold on the result so a reader can absorb
-Sleep 6s
+# Hold on the result + action prompts so a reader can absorb
+Sleep 3s

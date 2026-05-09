@@ -45,23 +45,21 @@ _PLAIN_STDOUT = not sys.stdout.isatty()
 
 
 # ── Brand chrome ────────────────────────────────────────────────
-# Basalt mark — single hexagon outline, the canonical brand glyph.
-# Matches the favicon + site SVG (a hexagonal cross-section through
-# a basalt column).
+# Basalt formation — top-down view of a hexagonal tessellation in a
+# 3-4-5-4-3 diamond. Real basalt formations (Giant's Causeway,
+# Devils Postpile, Fingal's Cave) viewed from above tessellate this
+# way. Wordmark anchors to the widest row (5 hexagons); two taglines
+# beneath. Rows 1-2 frame the wordmark with the natural hex pattern.
 #
-# Uses Unicode box-drawing diagonals U+2571 (╱) and U+2572 (╲)
-# instead of ASCII slashes — Rich's markup parser treats `\[` as
-# an escape, so a literal `\` immediately before any `[` renders
-# as `[/]` artifact. Unicode diagonals have no escape meaning.
-#
+# All text columns aligned at column 18.
 # Suppressed when piped (NO_COLOR / non-tty) and on JSON output.
 
 BANNER_LINES = (
-    "       [#D9824B]___[/]",
-    "      [#D9824B]\u2571[/]   [#D9824B]\u2572[/]",
-    "     [#D9824B]\u2571[/]     [#D9824B]\u2572[/]      [#EFE9E2]Basalt[/][bold #D9824B].[/]",
-    "     [#D9824B]\u2572[/]     [#D9824B]\u2571[/]      [dim]reads your vault, surfaces what you believe.[/]",
-    "      [#D9824B]\u2572[/]___[#D9824B]\u2571[/]",
+    "       [#D9824B]\u2b21 \u2b21 \u2b21[/]",
+    "      [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21[/]",
+    "     [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21 \u2b21[/]    [#EFE9E2]Basalt[/][bold #D9824B].[/]",
+    "      [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21[/]     [dim]reads your vault. surfaces what you believe but never wrote down.[/]",
+    "       [#D9824B]\u2b21 \u2b21 \u2b21[/]       [#D9824B]\u00b7[/] [dim italic]five verbs. one brief. never writes back.[/]",
 )
 
 
@@ -1003,7 +1001,7 @@ def cmd_about() -> None:
     """What Basalt is, in fewer words than the README."""
     if _PLAIN_STDOUT:
         # Plain-text mode for `basalt about | mail -s ...`
-        console.print("Basalt — reads your vault, surfaces what you believe.")
+        console.print("Basalt — reads your vault. surfaces what you believe but never wrote down.")
         console.print("Standalone. Read-only. Local-first.")
         console.print(f"schema {SCHEMA_VERSION}")
         return

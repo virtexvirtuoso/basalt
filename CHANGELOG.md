@@ -14,6 +14,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - One-click installer per Installer-Scope-2026-05-08.md
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` rules can fire
 
+## [0.0.12] — 2026-05-09
+
+### Changed — diamond honeycomb (with extended copy)
+
+Reverts to the v0.0.10 diamond tessellation (3-4-5-4-3) and keeps the
+extended copy added in v0.0.11:
+
+- Wordmark *Basalt.* anchors to row 3 (widest, 5 hexagons)
+- Tagline on row 4: *"reads your vault. surfaces what you believe but never wrote down."*
+- Sub-tagline on row 5: *"· five verbs. one brief. never writes back."*
+
+The diamond reads as "the basalt formation" — the canonical iconic shape.
+Three lines of copy now match three rows of the formation's lower half.
+
 ## [0.0.11] — 2026-05-08
 
 ### Changed — back to the single-hex outline (user-preferred)
