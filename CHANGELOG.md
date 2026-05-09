@@ -14,6 +14,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - One-click installer per Installer-Scope-2026-05-08.md
 - Calibration v1: word-count-at-log-time so `candidate_shrinks` rules can fire
 
+## [0.0.10] — 2026-05-08
+
+### Changed — basalt formation banner (diamond honeycomb)
+
+Upgrades v0.0.9's single-column basalt to a 3-4-5-4-3 diamond hex
+tessellation — the top-down view of a basalt formation. The wordmark
+*Basalt.* now anchors to the widest row (5 hexagons), the formation's
+visual core. The tagline anchors to row 4. Rows 1, 2, and 5 frame the
+wordmark with the natural hex-tile pattern.
+
+This is the canonical iconic shape — Giant's Causeway, Devils Postpile,
+and Fingal's Cave all viewed from above tessellate exactly this way.
+The mark now reads as "the basalt formation" rather than "a hexagon."
+
 ## [0.0.9] — 2026-05-08
 
 ### Changed — basalt column banner

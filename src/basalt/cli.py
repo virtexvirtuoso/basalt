@@ -45,20 +45,20 @@ _PLAIN_STDOUT = not sys.stdout.isatty()
 
 
 # ── Brand chrome ────────────────────────────────────────────────
-# Basalt column — vertical stack of hexagonal cross-sections. Real
-# basalt columns at the Giant's Causeway, Devils Postpile, Fingal's
-# Cave look exactly like this. The brand mark earns its name.
+# Basalt formation — top-down view of a hexagonal tessellation in a
+# 3-4-5-4-3 diamond. Real basalt formations (Giant's Causeway,
+# Devils Postpile, Fingal's Cave) viewed from above tessellate this
+# way. The wordmark anchors to the widest row (5 hexagons) — the
+# visual core of the formation.
 #
-# Wordmark + tagline anchored to row 2 + 3; rows 1 and 4 frame them
-# with hexagon glyphs above and below. No diagonal-meets-underscore
-# alignment seam. No backslash-escape gotchas. Suppressed when piped
-# (NO_COLOR / non-tty) and on JSON output.
+# Suppressed when piped (NO_COLOR / non-tty) and on JSON output.
 
 BANNER_LINES = (
-    "   [#D9824B]\u2b21[/]",
-    "   [#D9824B]\u2b21[/]   [#EFE9E2]Basalt[/][bold #D9824B].[/]",
-    "   [#D9824B]\u2b21[/]   [dim]reads your vault, surfaces what you believe.[/]",
-    "   [#D9824B]\u2b21[/]",
+    "       [#D9824B]\u2b21 \u2b21 \u2b21[/]",
+    "      [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21[/]",
+    "     [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21 \u2b21[/]    [#EFE9E2]Basalt[/][bold #D9824B].[/]",
+    "      [#D9824B]\u2b21 \u2b21 \u2b21 \u2b21[/]     [dim]reads your vault, surfaces what you believe.[/]",
+    "       [#D9824B]\u2b21 \u2b21 \u2b21[/]",
 )
 
 
