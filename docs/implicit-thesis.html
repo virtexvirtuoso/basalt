@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Implicit Thesis — Basalt</title>
+    <meta name="description" content="The thing you keep saying without realizing you're saying the same thing. Basalt finds clusters of 3+ notes converging on an unnamed through-line.">
+    <meta property="og:title" content="Implicit Thesis — Basalt">
+    <meta property="og:description" content="The thing you keep saying without realizing you're saying the same thing.">
+    <meta property="og:image" content="https://virtuosoai.dev/basalt/og.png">
+    <meta property="og:url" content="https://virtuosoai.dev/basalt/implicit-thesis.html">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Implicit Thesis — Basalt">
+    <meta name="twitter:description" content="The thing you keep saying without realizing you're saying the same thing.">
+    <meta name="twitter:image" content="https://virtuosoai.dev/basalt/og.png">
+    <style>
+        :root { --bg: #0E0D0C; --fg: #EFE9E2; --accent: #D9824B; --muted: #C9C0B4; --dim: #7A7269; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 3rem 2rem; max-width: 800px; margin: 0 auto; }
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 0.5rem; }
+        h2 { color: var(--accent); border-bottom: 1px solid var(--dim); padding-bottom: 0.5rem; margin-top: 2.5rem; }
+        blockquote { border-left: 3px solid var(--accent); padding-left: 1.5rem; margin: 1.5rem 0; color: var(--muted); font-style: italic; }
+        .tagline { font-style: italic; color: var(--muted); font-size: 1.3rem; margin-bottom: 2rem; }
+        code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.5rem; border-radius: 4px; font-family: "JetBrains Mono", monospace; font-size: 0.9em; }
+        pre { background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--dim); }
+        pre code { background: none; padding: 0; }
+        a { color: var(--accent); }
+        .demo-box { margin: 2rem 0; text-align: center; }
+        .demo-box img { max-width: 100%; border: 1px solid var(--accent); border-radius: 8px; }
+        .demo-box a { display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent); color: var(--bg); text-decoration: none; border-radius: 4px; font-weight: bold; }
+        ul { padding-left: 1.5rem; }
+        li { margin: 0.5rem 0; }
+        hr { border: none; border-top: 1px solid var(--dim); margin: 2rem 0; }
+    </style>
+</head>
+<body>
+    <h1>Implicit Thesis</h1>
+    <p class="tagline">The thing you keep saying without realizing you're saying the same thing.</p>
+    <div class="demo-box" style="margin: 1.5rem 0;">
+        <p style="color: var(--muted); margin-bottom: 1rem;"><strong>v0 Shipped</strong> — Running on 2,847 notes</p>
+        <img src="implicit-thesis.gif" alt="Implicit Thesis Demo" style="max-width: 100%; border: 1px solid var(--accent); border-radius: 8px;">
+        <div style="margin-top: 1rem;">
+            <a href="implicit-thesis.mp4" download style="display: inline-block; margin-right: 1rem; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">🎥 Download MP4</a>
+            <a href="implicit-thesis-landing.md" style="display: inline-block; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">📄 View Markdown</a>
+        </div>
+    </div>
+
+    <h2>What It Does</h2>
+    <p>Finds clusters of 3+ notes that converge on a single through-line you've never named.</p>
+    <p>Where <strong>Connection</strong> finds <em>pairs</em> of notes that are the same idea, <strong>Implicit Thesis</strong> finds <em>clusters</em> of rephrasings — you read them side-by-side and the thesis becomes visible.</p>
+
+    <h2>How It Works</h2>
+    <ol>
+        <li><strong>Embedding Clustering</strong> — Groups notes by semantic similarity (cosine ≥ 0.72)</li>
+        <li><strong>Tight Neighborhoods</strong> — Finds near-cliques where <em>every</em> pair is above threshold</li>
+        <li><strong>Centroid Selection</strong> — Picks the note with highest mean intra-cluster similarity</li>
+        <li><strong>Diversity Gate</strong> — Only surfaces clusters spanning ≥2 folders OR ≥30 days</li>
+        <li><strong>Quote Extraction</strong> — Surfaces each member's load-bearing sentence as a "rephrasing"</li>
+    </ol>
+
+    <h2>Example Output</h2>
+    <pre><code>## Implicit Thesis
+
+### 1. The Moat Is Distribution, Not Technology
+
+**Centroid:** `04-Trading/Research/Moat-Hypothesis.md`
+**Cluster Size:** 5 notes across 3 folders
+**Time Span:** 89 days
+
+&gt; The sustainable edge isn't speed alone — it's speed + intelligence.
+
+**Rephrasings:**
+- **SignalBot Phase 2** (02-Projects)
+  &gt; Speed without adaptive intelligence is just expensive latency.
+- **Competitive Positioning** (05-Strategy)
+  &gt; The real barrier isn't model quality — it's distribution velocity.
+- **Why We Win** (02-Projects/Maestro)
+  &gt; What separates us isn't the alpha — it's how fast we ship alpha.</code></pre>
+
+    <h2>The Unlock</h2>
+    <p>You've been writing variations of the same insight for months. You just haven't seen them together.</p>
+    <p>Implicit Thesis surfaces the convergence. The thesis is already in your vault — you've been approaching it from different angles, in different contexts, at different times. Reading the cluster side-by-side makes the through-line obvious.</p>
+
+    <h2>Phase Roadmap</h2>
+    <ul>
+        <li><strong>v0 (Shipped):</strong> Clustering heuristic — surfaces convergence, not the thesis itself.</li>
+        <li><strong>v1 (Pro):</strong> LLM synthesis — feeds the cluster to a frontier model, returns a one-sentence thesis statement.</li>
+        <li><strong>v2 (Team):</strong> Cross-user thesis detection — finds implicit theses spanning multiple team members' vaults.</li>
+    </ul>
+
+    <h2>API</h2>
+    <pre><code>from basalt.implicit_thesis import ImplicitThesisVerb
+
+verb = ImplicitThesisVerb(conn)
+result = verb.run(top_n=3, min_sim=0.72, min_cluster_size=3)
+
+for cluster in result.findings:
+    print(f"Centroid: {cluster.centroid_title}")
+    print(f"Cluster: {cluster.cluster_size} notes, {cluster.folder_diversity} folders")
+    print(f"Quote: {cluster.centroid_quote}")</code></pre>
+
+    <h2>Pricing</h2>
+    <ul>
+        <li><strong>Free Tier:</strong> 1 implicit thesis per week</li>
+        <li><strong>Pro ($12/mo):</strong> Daily implicit thesis + LLM synthesis (v1)</li>
+        <li><strong>Team ($49/mo):</strong> Cross-user thesis detection (v2)</li>
+    </ul>
+
+    <h2>Demo</h2>
+    <div style="background: rgba(217, 130, 75, 0.05); border: 1px solid var(--accent); border-radius: 8px; padding: 1.5rem; margin: 2rem 0;">
+        <p style="margin: 0 0 1rem 0; color: var(--fg);"><strong>Real Example from Fernando's Vault</strong></p>
+        <p style="margin: 0; color: var(--muted);">This implicit thesis cluster revealed 5 notes across 3 folders all circling the same idea: "The moat is distribution, not technology." Written over 89 days, never named explicitly until Basalt surfaced the pattern. Result: reframed the entire competitive strategy doc.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>CLI</strong></p>
+            <p style="color: var(--muted); margin: 0;"><code>basalt brief --section implicit-thesis</code></p>
+        </div>
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>GitHub</strong></p>
+            <p style="color: var(--muted); margin: 0;"><a href="https://github.com/ffv/basalt" style="color: var(--accent);">github.com/ffv/basalt</a></p>
+        </div>
+    </div>
+    <div style="padding-top: 2rem; border-top: 1px solid var(--dim); color: var(--dim); font-size: 0.9rem;">
+        <p style="margin: 0 0 0.5rem 0;">Built by <a href="https://virtuosoai.dev" style="color: var(--muted);">Fernando Villar</a> | <a href="mailto:fernando@virtuosocrypto.com" style="color: var(--muted);">fernando@virtuosocrypto.com</a></p>
+        <p style="margin: 0;">← <a href="buried-insight.html" style="color: var(--accent);">Back to all verbs</a> | Next: <a href="connection.html" style="color: var(--accent);">Connection →</a></p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basalt — Beta Waitlist</title>
+    <meta name="description" content="Join the Basalt private beta. Limited slots available.">
+    <meta property="og:title" content="Basalt — Beta Waitlist">
+    <meta property="og:description" content="Join the private beta. Limited slots available.">
+    <meta property="og:image" content="https://virtuosoai.dev/basalt/og.png">
+    <meta property="og:url" content="https://virtuosoai.dev/basalt/waitlist.html">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <style>
+        :root { --bg: #0E0D0C; --fg: #EFE9E2; --accent: #D9824B; --muted: #C9C0B4; --dim: #7A7269; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            padding: 2rem;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .container { max-width: 600px; margin: 0 auto; padding-top: 4rem; }
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .tagline { font-style: italic; color: var(--muted); font-size: 1.2rem; margin-bottom: 2rem; }
+        .form-group { margin-bottom: 1.5rem; }
+        label { display: block; color: var(--muted); margin-bottom: 0.5rem; font-size: 0.95rem; }
+        input, textarea, select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--dim);
+            border-radius: 6px;
+            color: var(--fg);
+            font-size: 1rem;
+            font-family: inherit;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(217, 130, 75, 0.2);
+        }
+        button {
+            display: inline-block;
+            padding: 0.75rem 2rem;
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        .note { color: var(--dim); font-size: 0.85rem; margin-top: 0.5rem; }
+        .back-link { display: inline-block; margin-top: 2rem; color: var(--muted); text-decoration: none; }
+        .back-link:hover { color: var(--accent); }
+        .success-message {
+            display: none;
+            background: rgba(217, 130, 75, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        .success-message h2 { color: var(--accent); margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Basalt Beta</h1>
+        <p class="tagline">Your vault, interrogated.</p>
+        
+        <div id="form-container">
+            <p style="color: var(--muted); margin-bottom: 2rem;">
+                Basalt is in private beta with limited slots. Fill out the form below and I'll reach out when a spot opens up.
+            </p>
+            
+            <form id="waitlist-form" action="https://formspree.io/f/mvgwqzwl" method="POST">
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input type="text" id="name" name="name" required placeholder="Your name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">Email *</label>
+                    <input type="email" id="email" name="email" required placeholder="you@example.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="vault-size">Approximate vault size</label>
+                    <select id="vault-size" name="vault_size">
+                        <option value="">Select...</option>
+                        <option value="under-500">&lt; 500 notes</option>
+                        <option value="500-2000">500 — 2,000 notes</option>
+                        <option value="2000-5000">2,000 — 5,000 notes</option>
+                        <option value="5000-10000">5,000 — 10,000 notes</option>
+                        <option value="10000+">10,000+ notes</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="use-case">Primary use case</label>
+                    <select id="use-case" name="use_case">
+                        <option value="">Select...</option>
+                        <option value="personal-pkm">Personal knowledge management</option>
+                        <option value="research">Research / academic</option>
+                        <option value="writing">Writing / content creation</option>
+                        <option value="team">Team knowledge base</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="notes">Anything else I should know?</label>
+                    <textarea id="notes" name="notes" rows="4" placeholder="Tell me about your workflow, pain points, or what you're hoping Basalt will help with..."></textarea>
+                </div>
+                
+                <button type="submit">Request Access</button>
+                <p class="note">Free during beta. No credit card required.</p>
+            </form>
+        </div>
+        
+        <div id="success-message" class="success-message">
+            <h2>🧪 You're on the list!</h2>
+            <p style="color: var(--muted);">Thanks for requesting access. I'll reach out when a beta slot opens up — usually within 1-2 weeks.</p>
+            <p style="color: var(--dim); font-size: 0.9rem; margin-top: 1.5rem;">
+                In the meantime, check out the <a href="verbs-index.html" style="color: var(--accent);">five verbs</a> to see what Basalt does.
+            </p>
+        </div>
+        
+        <a href="verbs-index.html" class="back-link">← Back to all verbs</a>
+    </div>
+    
+    <script>
+        // Check for success param in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('submitted') === 'true') {
+            document.getElementById('form-container').style.display = 'none';
+            document.getElementById('success-message').style.display = 'block';
+        }
+        
+        // Handle form submission
+        const form = document.getElementById('waitlist-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    window.location.href = '?submitted=true';
+                } else {
+                    alert('Something went wrong. Please email fernando@virtuosocrypto.com directly.');
+                }
+            } catch (err) {
+                alert('Something went wrong. Please email fernando@virtuosocrypto.com directly.');
+            }
+        });
+    </script>
+</body>
+</html>

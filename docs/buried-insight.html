@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buried Insight — Basalt</title>
+    <meta name="description" content="The brilliant thing you wrote and forgot about. Basalt finds old, dormant notes validated by recent activity.">
+    <meta property="og:title" content="Buried Insight — Basalt">
+    <meta property="og:description" content="The brilliant thing you wrote and forgot about.">
+    <meta property="og:image" content="https://virtuosoai.dev/basalt/og.png">
+    <meta property="og:url" content="https://virtuosoai.dev/basalt/buried-insight.html">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Buried Insight — Basalt">
+    <meta name="twitter:description" content="The brilliant thing you wrote and forgot about.">
+    <meta name="twitter:image" content="https://virtuosoai.dev/basalt/og.png">
+    <style>
+        :root { --bg: #0E0D0C; --fg: #EFE9E2; --accent: #D9824B; --muted: #C9C0B4; --dim: #7A7269; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 3rem 2rem; max-width: 800px; margin: 0 auto; }
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 0.5rem; }
+        h2 { color: var(--accent); border-bottom: 1px solid var(--dim); padding-bottom: 0.5rem; margin-top: 2.5rem; }
+        h3 { color: var(--fg); margin-top: 1.5rem; }
+        blockquote { border-left: 3px solid var(--accent); padding-left: 1.5rem; margin: 1.5rem 0; color: var(--muted); font-style: italic; }
+        .tagline { font-style: italic; color: var(--muted); font-size: 1.3rem; margin-bottom: 2rem; }
+        code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.5rem; border-radius: 4px; font-family: "JetBrains Mono", monospace; font-size: 0.9em; }
+        pre { background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--dim); }
+        pre code { background: none; padding: 0; }
+        a { color: var(--accent); }
+        .demo-box { margin: 2rem 0; text-align: center; }
+        .demo-box img { max-width: 100%; border: 1px solid var(--accent); border-radius: 8px; }
+        .demo-box a { display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent); color: var(--bg); text-decoration: none; border-radius: 4px; font-weight: bold; }
+        .demo-box a:hover { opacity: 0.9; }
+        ul { padding-left: 1.5rem; }
+        li { margin: 0.5rem 0; }
+        hr { border: none; border-top: 1px solid var(--dim); margin: 2rem 0; }
+    </style>
+</head>
+<body>
+    <h1>Buried Insight</h1>
+    <p class="tagline">The brilliant thing you wrote and forgot about.</p>
+    <div class="demo-box" style="margin: 1.5rem 0;">
+        <p style="color: var(--muted); margin-bottom: 1rem;"><strong>v0 Shipped</strong> — Running on 2,847 notes</p>
+        <img src="buried-insight.gif" alt="Buried Insight Demo" style="max-width: 100%; border: 1px solid var(--accent); border-radius: 8px;">
+        <div style="margin-top: 1rem;">
+            <a href="buried-insight.mp4" download style="display: inline-block; margin-right: 1rem; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">🎥 Download MP4</a>
+            <a href="buried-insight-landing.md" style="display: inline-block; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">📄 View Markdown</a>
+        </div>
+    </div>
+
+    <h2>What It Does</h2>
+    <p>Finds notes you wrote that are both <strong>old</strong> and <strong>dormant</strong> — but have been <strong>validated by recent activity</strong> in your vault.</p>
+    <p>The insight isn't buried because it's wrong. It's buried because you moved on without integrating it.</p>
+
+    <h2>How It Works</h2>
+    <ol>
+        <li><strong>Age Gate</strong> — Note must be ≥90 days old (or vault-age-aware threshold)</li>
+        <li><strong>Dormancy Gate</strong> — No edits in ≥60 days</li>
+        <li><strong>Validator Scan</strong> — Looks for recent notes (≤30 days) that explicitly link to it OR lexically overlap with it</li>
+        <li><strong>Score Ranking</strong> — Ranks by <code>(age_days × dormant_days) / validator_recency</code></li>
+        <li><strong>Quote Extraction</strong> — Surfaces the load-bearing sentence from the buried note</li>
+    </ol>
+
+    <h2>Example Output</h2>
+    <pre><code>## Buried Insight
+
+### 1. SignalBot — Original Hypothesis
+
+**Path:** `02-Projects/SignalBot/HYPOTHESIS.md`
+**Age:** 239 days old, dormant for 239 days
+
+&gt; The sustainable edge isn't speed alone — it's speed + intelligence.
+
+**Validated by:**
+- ✓ [[SignalBot Phase 2 — Multi-signal stack]] — updated 56 days ago
+- ✓ [[SignalBot Backtest — Q1 2026]] — updated 34 days ago
+- ✓ [[Strategy Review — 2026-04-10]] — updated 29 days ago</code></pre>
+
+    <h2>The Unlock</h2>
+    <p>You've already solved hard problems. You just forgot you solved them.</p>
+    <p>Buried Insight surfaces the notes you wrote that time proved valuable — not because they're old, but because <strong>you kept validating them without realizing you were circling back</strong>. The link graph tells the story: you wrote something true, then you went silent on it, then you kept building on top of it without ever revisiting the source.</p>
+
+    <h2>Phase Roadmap</h2>
+    <ul>
+        <li><strong>v0 (Shipped):</strong> Heuristic — age × dormancy / validator recency. Surfaces candidates for human review.</li>
+        <li><strong>v1 (Pro):</strong> LLM synthesis — feeds the buried note + validators to a frontier model, returns a one-sentence "why this matters now" summary.</li>
+        <li><strong>v2 (Team):</strong> Cross-user burial detection — finds insights buried in one team member's vault that another is actively validating.</li>
+    </ul>
+
+    <h2>API</h2>
+    <pre><code>from basalt.buried import BuriedInsightVerb
+from datetime import date
+
+verb = BuriedInsightVerb(conn, today=date.today())
+result = verb.run(top_n=3, vault_aware=True)
+
+for insight in result.findings:
+    print(f"Buried: {insight.candidate.title}")
+    print(f"Age: {(today - insight.candidate.created).days} days")
+    print(f"Quote: {insight.quote}")
+    print(f"Validators: {len(insight.validators)}")</code></pre>
+
+    <h2>Pricing</h2>
+    <ul>
+        <li><strong>Free Tier:</strong> 1 buried insight per week</li>
+        <li><strong>Pro ($12/mo):</strong> Daily buried insight + LLM synthesis (v1)</li>
+        <li><strong>Team ($49/mo):</strong> Cross-user burial detection (v2)</li>
+    </ul>
+
+    <h2>Demo</h2>
+    <div style="background: rgba(217, 130, 75, 0.05); border: 1px solid var(--accent); border-radius: 8px; padding: 1.5rem; margin: 2rem 0;">
+        <p style="margin: 0 0 1rem 0; color: var(--fg);"><strong>Real Example from Fernando's Vault</strong></p>
+        <p style="margin: 0; color: var(--muted);">This buried insight resurfaced a 239-day-old hypothesis about SignalBot. The insight wasn't wrong — it was just forgotten. Three subsequent notes validated it without ever linking back. Result: re-prioritized the multi-signal stack work.</p>
+    </div>
+
+    <hr style="border-color: var(--dim); margin: 3rem 0;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>CLI</strong></p>
+            <p style="color: var(--muted); margin: 0;"><code>basalt brief --section buried-insight</code></p>
+        </div>
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>GitHub</strong></p>
+            <p style="color: var(--muted); margin: 0;"><a href="https://github.com/ffv/basalt" style="color: var(--accent);">github.com/ffv/basalt</a></p>
+        </div>
+    </div>
+    <div style="padding-top: 2rem; border-top: 1px solid var(--dim); color: var(--dim); font-size: 0.9rem;">
+        <p style="margin: 0 0 0.5rem 0;">Built by <a href="https://virtuosoai.dev" style="color: var(--muted);">Fernando Villar</a> | <a href="mailto:fernando@virtuosocrypto.com" style="color: var(--muted);">fernando@virtuosocrypto.com</a></p>
+        <p style="margin: 0;"><a href="verbs-index.html" style="color: var(--accent);">← Back to all five verbs</a> | Next: <a href="implicit-thesis.html" style="color: var(--accent);">Implicit Thesis →</a></p>
+    </div>
+</body>
+</html>

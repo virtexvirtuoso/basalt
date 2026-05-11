@@ -17,7 +17,7 @@ from basalt.embed import ensure_embeddings
 from basalt.buried import find_buried_insight, find_buried_insights
 from basalt.connection import find_connections, ConnectionPair, DEFAULT_MIN_SIM as CONN_MIN_SIM
 from basalt.contradiction import find_contradictions, ContradictionPair, DEFAULT_MIN_SIM as CONT_MIN_SIM
-from basalt.implicit_thesis import find_implicit_theses, ThesisCluster, DEFAULT_MIN_SIM as THESIS_MIN_SIM
+from basalt.implicit_thesis import find_implicit_theses, ThesisCluster, DEFAULT_MIN_SIM as THESIS_MIN_SIM, ImplicitThesisVerb
 from basalt.drift import find_drift, DriftFinding, DEFAULT_WINDOW_DAYS as DRIFT_WINDOW_DAYS
 from basalt.audit import (
     record_finding,

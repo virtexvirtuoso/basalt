@@ -2,10 +2,28 @@
 # PyPI distribution name — `basalt` is already taken by an unrelated package.
 # Internal package name stays `basalt`; CLI command stays `basalt`.
 name = "basalt-vault"
-version = "0.0.12"
+version = "0.0.14"
 description = "Reads your vault and surfaces what you believe but never wrote down."
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    { name = "Fernando Villar", email = "fernando@virtuosocrypto.com" }
+]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+keywords = ["obsidian", "knowledge-management", "second-brain", "mcp", "ai", "vault", "markdown", "longitudinal-analysis"]
 dependencies = [
     "typer>=0.17",
     "python-frontmatter>=1.1",
@@ -15,11 +33,24 @@ dependencies = [
     "rich>=14",
 ]
 
+[project.urls]
+Homepage = "https://virtuosoai.dev/basalt/"
+Repository = "https://github.com/virtexvirtuoso/basalt"
+Documentation = "https://github.com/virtexvirtuoso/basalt/tree/main/docs"
+Changelog = "https://github.com/virtexvirtuoso/basalt/blob/main/CHANGELOG.md"
+Issues = "https://github.com/virtexvirtuoso/basalt/issues"
+
 [project.optional-dependencies]
 # `pip install basalt-vault[mcp]` to expose the verbs as MCP tools to any
 # MCP client (Claude Desktop, Cursor, Cline, Zed, VS Code Copilot).
 mcp = [
     "mcp>=1.0",
+]
+# `pip install basalt-vault[pro]` for Pro tier features (LLM synthesis verbs).
+# Per [[Decision-Pro-Tier-BYO-Key-2026-05-11]]: Pro tier = BYO-key only.
+# Basalt never hosts inference. User supplies their own API keys.
+pro = [
+    "anthropic>=0.40",
 ]
 
 [project.scripts]

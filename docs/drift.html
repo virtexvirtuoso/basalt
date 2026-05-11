@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drift — Basalt</title>
+    <meta name="description" content="What you say is the priority versus what you actually spent the week on. Basalt compares stated vs lived priorities.">
+    <meta property="og:title" content="Drift — Basalt">
+    <meta property="og:description" content="What you say is the priority versus what you actually spent the week on.">
+    <meta property="og:image" content="https://virtuosoai.dev/basalt/og.png">
+    <meta property="og:url" content="https://virtuosoai.dev/basalt/drift.html">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Drift — Basalt">
+    <meta name="twitter:description" content="What you say is the priority versus what you actually spent the week on.">
+    <meta name="twitter:image" content="https://virtuosoai.dev/basalt/og.png">
+    <style>
+        :root { --bg: #0E0D0C; --fg: #EFE9E2; --accent: #D9824B; --muted: #C9C0B4; --dim: #7A7269; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 3rem 2rem; max-width: 800px; margin: 0 auto; }
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 0.5rem; }
+        h2 { color: var(--accent); border-bottom: 1px solid var(--dim); padding-bottom: 0.5rem; margin-top: 2.5rem; }
+        .tagline { font-style: italic; color: var(--muted); font-size: 1.3rem; margin-bottom: 2rem; }
+        code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.5rem; border-radius: 4px; font-family: "JetBrains Mono", monospace; font-size: 0.9em; }
+        pre { background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--dim); }
+        pre code { background: none; padding: 0; }
+        a { color: var(--accent); }
+        .demo-box { margin: 2rem 0; text-align: center; }
+        .demo-box img { max-width: 100%; border: 1px solid var(--accent); border-radius: 8px; }
+        .demo-box a { display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent); color: var(--bg); text-decoration: none; border-radius: 4px; font-weight: bold; }
+        .metric { display: inline-block; background: rgba(217, 130, 75, 0.15); padding: 0.5rem 1rem; border-radius: 4px; margin: 0.5rem 0.5rem 0.5rem 0; border: 1px solid var(--accent); }
+        .metric strong { color: var(--accent); }
+        ul { padding-left: 1.5rem; }
+        li { margin: 0.5rem 0; }
+        hr { border: none; border-top: 1px solid var(--dim); margin: 2rem 0; }
+    </style>
+</head>
+<body>
+    <h1>Drift</h1>
+    <p class="tagline">What you say is the priority versus what you actually spent the week on.</p>
+    <div class="demo-box" style="margin: 1.5rem 0;">
+        <p style="color: var(--muted); margin-bottom: 1rem;"><strong>v0 Shipped</strong> — Running on 2,847 notes</p>
+        <img src="drift.gif" alt="Drift Demo" style="max-width: 100%; border: 1px solid var(--accent); border-radius: 8px;">
+        <div style="margin-top: 1rem;">
+            <a href="drift.mp4" download style="display: inline-block; margin-right: 1rem; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">🎥 Download MP4</a>
+            <a href="drift-landing.md" style="display: inline-block; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">📄 View Markdown</a>
+        </div>
+    </div>
+
+    <h2>What It Does</h2>
+    <p>Compares your <strong>stated priorities</strong> (project notes in <code>02-Projects/</code>) against your <strong>lived priorities</strong> (daily notes mentioning project names) — surfaces projects you're overworking or underworking relative to your stated intent.</p>
+
+    <h2>How It Works</h2>
+    <ol>
+        <li><strong>Stated Priority</strong> — Counts notes per project folder in <code>02-Projects/</code> over the last 30 days</li>
+        <li><strong>Lived Priority</strong> — Counts project name mentions in daily notes (<code>01-Daily/</code>) over the same window</li>
+        <li><strong>Share Calculation</strong> — Converts both to percentage shares</li>
+        <li><strong>Drift Detection</strong> — Finds projects where stated share ≠ lived share by ≥10 percentage points</li>
+        <li><strong>Headline Narrative</strong> — Generates plain-English summary: "X is overworked (+34pp), Y is underworked (-34pp)"</li>
+    </ol>
+
+    <h2>Example Output</h2>
+    <pre><code>## Drift
+
+**Window:** 30 days | **Daily Notes:** 5 | **Projects:** 2
+
+### 1. Priority Drift
+
+<div class="metric"><strong>Overworked:</strong> Atlas<br>
+Stated: #2 (4 notes, 40.0%)<br>
+Lived: #1 (23 mentions, 74.2%)<br>
+<strong>Drift: +34.2pp</strong></div>
+
+<div class="metric"><strong>Underworked:</strong> SignalBot<br>
+Stated: #1 (6 notes, 60.0%)<br>
+Lived: #2 (8 mentions, 25.8%)<br>
+<strong>Drift: -34.2pp</strong></div></code></pre>
+
+    <h2>The Unlock</h2>
+    <p>You said SignalBot was the priority. Then you spent three weeks thinking about Atlas.</p>
+    <p>Drift doesn't judge — it reveals. Maybe Atlas deserved the attention. Maybe you lost focus. The point isn't right or wrong; the point is <strong>legibility</strong>. You can't course-correct what you can't see.</p>
+
+    <h2>Phase Roadmap</h2>
+    <ul>
+        <li><strong>v0 (Shipped):</strong> 30-day window, daily-note-based lived tracking. Requires ≥2 projects and ≥3 daily notes.</li>
+        <li><strong>v1 (Pro):</strong> Multi-window drift (7d, 30d, 90d) — shows whether drift is accelerating or correcting. Calendar integration.</li>
+        <li><strong>v2 (Team):</strong> Team drift detection — finds misalignment between team OKRs and where the team actually spent time.</li>
+    </ul>
+
+    <h2>API</h2>
+    <pre><code>from basalt.drift import DriftVerb
+from datetime import date
+
+verb = DriftVerb(conn, today=date.today())
+result = verb.run(top_n=1, window_days=30)
+
+for finding in result.findings:
+    print(f"Window: {finding.window_days} days")
+    if finding.headline_overworked:
+        ow = finding.headline_overworked
+        print(f"Overworked: {ow.name} (+{ow.drift_pct:.1f}pp)")
+    if finding.headline_underworked:
+        uw = finding.headline_underworked
+        print(f"Underworked: {uw.name} ({uw.drift_pct:.1f}pp)")</code></pre>
+
+    <h2>Pricing</h2>
+    <ul>
+        <li><strong>Free Tier:</strong> 1 drift report per week</li>
+        <li><strong>Pro ($12/mo):</strong> Daily drift + multi-window analysis (v1)</li>
+        <li><strong>Team ($49/mo):</strong> Team drift detection (v2)</li>
+    </ul>
+
+    <h2>Demo</h2>
+    <div style="background: rgba(217, 130, 75, 0.05); border: 1px solid var(--accent); border-radius: 8px; padding: 1.5rem; margin: 2rem 0;">
+        <p style="margin: 0 0 1rem 0; color: var(--fg);"><strong>Real Example from Fernando's Vault</strong></p>
+        <p style="margin: 0; color: var(--muted);">SignalBot was marked as the #1 priority in project docs. But 30 days of daily notes showed 74% of attention went to Atlas. Not wrong — just invisible until Drift surfaced it. Led to an explicit decision: either re-prioritize SignalBot or update the project docs to reflect reality.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>CLI</strong></p>
+            <p style="color: var(--muted); margin: 0;"><code>basalt brief --section drift</code></p>
+        </div>
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>GitHub</strong></p>
+            <p style="color: var(--muted); margin: 0;"><a href="https://github.com/ffv/basalt" style="color: var(--accent);">github.com/ffv/basalt</a></p>
+        </div>
+    </div>
+    <div style="padding-top: 2rem; border-top: 1px solid var(--dim); color: var(--dim); font-size: 0.9rem;">
+        <p style="margin: 0 0 0.5rem 0;">Built by <a href="https://virtuosoai.dev" style="color: var(--muted);">Fernando Villar</a> | <a href="mailto:fernando@virtuosocrypto.com" style="color: var(--muted);">fernando@virtuosocrypto.com</a></p>
+        <p style="margin: 0;">← <a href="contradiction.html" style="color: var(--accent);">Back to all verbs</a></p>
+    </div>
+</body>
+</html>

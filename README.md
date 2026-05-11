@@ -57,15 +57,15 @@ synthesis (named theses, classifier-validated contradictions). See
 
 ## Quickstart
 
-> **Heads up:** the PyPI name `basalt` is already taken by an unrelated
-> package. Install from source for now. PyPI distribution as `basalt-vault`
-> coming once Phase 0 lands.
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install basalt-vault
+```
+
+Or with MCP server:
 
 ```bash
-git clone https://github.com/virtexvirtuoso/basalt.git
-cd basalt
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install 'basalt-vault[mcp]'
 ```
 
 Try the demo (no vault required — uses a sample vault bundled with the repo):
@@ -80,6 +80,8 @@ Or point at your own vault:
 basalt index --vault ~/path/to/your-vault
 basalt brief --section all
 ```
+
+> **Building from source:** `git clone https://github.com/virtexvirtuoso/basalt.git && cd basalt && pip install -e .`
 
 ## Verbs shipped (4/4 site-advertised + 1 bonus)
 
@@ -182,7 +184,7 @@ client (Claude Desktop, Cursor, Cline, Zed, VS Code Copilot) can call
 Basalt's verbs as tools.
 
 ```bash
-pip install -e ".[mcp]"
+pip install 'basalt-vault[mcp]'
 basalt-mcp --help
 ```
 

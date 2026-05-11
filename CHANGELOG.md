@@ -6,13 +6,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.14] — 2026-05-11
+
+### Added
+— **PyPI distribution** — `pip install basalt-vault` and `pip install 'basalt-vault[mcp]'` now work. The package is published under `basalt-vault` (the name `basalt` was already taken on PyPI).
+— **MCP Registry submission** — the server is now discoverable via MCP client install flows (Claude Desktop, Cursor, Cline, Zed).
+— **`LLMProvider` interface** — code-enforced privacy boundary per [[Decision-Pro-Tier-BYO-Key-2026-05-11]]. Open tier bundles only `OllamaProvider` (localhost embeddings). Pro tier (`[pro]` extra) requires user-supplied API keys; stub providers raise `NotImplementedError` until installed.
+— **Provider tests** — 4 new tests guard the no-network promise (anthropic import check, OllamaProvider import, stub raises, MCP server AST scan).
+
+### Changed
+— **README install instructions** — replaced "install from source" with the one-line PyPI install. Source-build footnote preserved.
+— **`mcp_server.py`** — removed `from __future__ import annotations` to preserve runtime type objects. The MCP library's `Tool.from_function` calls `issubclass()` on annotations and requires actual types, not strings.
+— **`pyproject.toml`** — added `[pro]` extra with `anthropic>=0.40`; added PyPI metadata (authors, classifiers, keywords, URLs).
+
+### Engineering
+— **`.github/workflows/publish.yml`** — OIDC-based PyPI publishing on git tag.
+— **`tests/test_providers.py`** — new test suite guarding the Open-tier privacy boundary.
+— **All 35 tests pass** (31 original + 4 provider tests).
+
 ### Planned (carried)
 - Implicit Thesis v1 — LLM synthesis pass that names the cluster's through-line
 - Contradiction v1 — LLM-based pairwise compatibility classifier
 - Drift v1 — auto-evaluation of `drift_resolved` falsification rules (re-run drift on current window)
 - Obsidian plugin v0.2 — sidebar pane, status bar, Smart Connections parasitism
 - One-click installer per Installer-Scope-2026-05-08.md
-- Calibration v1: word-count-at-log-time so `candidate_shrinks` rules can fire
+
+## [0.0.13] — 2026-05-11
+
+### Added — Calibration v1: shrink rules can finally fire
+
+The calibration layer logs falsification rules with every finding, but two of
+them — `candidate_shrinks` (Buried Insight) and `either_shrinks` (Connection) —
+have been deadweight since v0.0.3 because the finding payload didn't preserve
+the original `word_count` at log time. There was nothing to compare current
+state against. They stayed `pending` forever.
+
+This release snapshots `word_count_at_log` per cited rel_path into every new
+finding payload, and rewrites both evaluators to actually compare. Findings
+logged before v0.0.13 stay pending — the backfill semantics are honest: no
+baseline, no verdict.
+
+- **`word_counts_at_log: dict[rel_path → int]`** now embedded in every
+  buried-insight, connection, contradiction, and implicit-thesis finding payload.
+  Drift is excluded (it cites projects, not specific notes).
+- **`candidate_shrinks`** — fires `falsified` when a cited note's current
+  word_count is below `(1 - drop_pct/100) × word_count_at_log`. Default
+  `drop_pct = 30` for Buried Insight.
+- **`either_shrinks`** — same logic for Connection pairs; either side
+  qualifying triggers the verdict. Default `drop_pct = 50`.
+- **Legacy briefs** without `word_counts_at_log` (logged on v0.0.3–v0.0.12)
+  stay `pending` — no spurious retro-falsifications.
+- 4 new smoke tests cover: (a) Buried Insight shrink-past-threshold fires,
+  (b) Connection either-side shrink fires, (c) sub-threshold shrink stays
+  pending, (d) legacy payload without baseline stays pending. **31/31 pass.**
+
+### Engineering
+
+- New helpers in `audit.py`: `_cited_paths(verb, finding)` (which rel_paths
+  this verb references) and `_lookup_word_counts(conn, rel_paths)` (single
+  IN-clause SQL fetch from the `notes` table). Both called from
+  `record_finding()` before payload serialization — verb modules untouched.
+- `_finding_payload()` gains a `word_counts: dict[str, int]` parameter,
+  embedded into each verb's payload alongside the existing fields. Function
+  stays pure; the DB lookup happens upstream in `record_finding()`.
+- The two evaluators replace `return "pending", ""` stubs with full shrink
+  comparison logic. Both honor the same backfill-safe shape: missing baseline
+  → stay pending.
 
 ## [0.0.12] — 2026-05-09
 

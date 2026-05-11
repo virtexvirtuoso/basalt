@@ -224,9 +224,41 @@ def _finding_key(verb: str, finding: Any) -> str:
     return f"{verb}:?"
 
 
-def _finding_payload(verb: str, finding: Any) -> dict:
+def _cited_paths(verb: str, finding: Any) -> list[str]:
+    """Which `rel_path`s does this finding cite? Used to snapshot word_count
+    at log time so `*_shrinks` rules can fire later in `audit_pending`.
+    Drift cites projects, not notes — returns empty list."""
+    if verb == "buried-insight":
+        return [finding.candidate.rel_path]
+    if verb in ("connection", "contradiction"):
+        return [finding.note_a_path, finding.note_b_path]
+    if verb == "implicit-thesis":
+        return [finding.centroid_path, *finding.member_paths]
+    return []
+
+
+def _lookup_word_counts(conn: sqlite3.Connection, rel_paths: list[str]) -> dict[str, int]:
+    """Fetch current word_count for each cited rel_path. Snapshotted into the
+    finding payload at record time so shrinks-rules have a baseline to compare.
+
+    Notes not present in the DB are simply absent from the dict (no fabrication)."""
+    if not rel_paths:
+        return {}
+    placeholders = ",".join("?" * len(rel_paths))
+    rows = conn.execute(
+        f"SELECT rel_path, word_count FROM notes WHERE rel_path IN ({placeholders})",
+        rel_paths,
+    ).fetchall()
+    return {r["rel_path"]: r["word_count"] for r in rows}
+
+
+def _finding_payload(verb: str, finding: Any, word_counts: dict[str, int]) -> dict:
     """Serialize the finding to a dict that survives across versions.
-    Stores enough to re-render the brief later from the briefs table alone."""
+    Stores enough to re-render the brief later from the briefs table alone.
+    `word_counts` is the rel_path → word_count snapshot at log time; verbs that
+    cite specific notes embed it as `word_counts_at_log` so `*_shrinks` rules
+    can fire later. (See v0.0.13 — earlier payloads omitted this and those
+    rules stayed pending forever.)"""
     if verb == "buried-insight":
         c = finding.candidate
         return {
@@ -236,6 +268,7 @@ def _finding_payload(verb: str, finding: Any) -> dict:
             "quote_provenance": finding.quote_provenance,
             "score": c.score,
             "validator_count": len(finding.validators),
+            "word_counts_at_log": dict(word_counts),
         }
     if verb == "connection":
         return {
@@ -244,6 +277,7 @@ def _finding_payload(verb: str, finding: Any) -> dict:
             "note_b_path": finding.note_b_path,
             "note_b_quote": finding.note_b_quote,
             "similarity": finding.similarity,
+            "word_counts_at_log": dict(word_counts),
         }
     if verb == "contradiction":
         return {
@@ -253,6 +287,7 @@ def _finding_payload(verb: str, finding: Any) -> dict:
             "note_b_quote": finding.note_b_quote,
             "similarity": finding.similarity,
             "signals": finding.signals,
+            "word_counts_at_log": dict(word_counts),
         }
     if verb == "implicit-thesis":
         return {
@@ -265,6 +300,7 @@ def _finding_payload(verb: str, finding: Any) -> dict:
             "folder_diversity": finding.folder_diversity,
             "span_days": finding.span_days,
             "mean_similarity": finding.mean_similarity,
+            "word_counts_at_log": dict(word_counts),
         }
     if verb == "drift":
         return {
@@ -296,7 +332,8 @@ def record_finding(
     """
     today = today or date.today()
     key = _finding_key(verb, finding)
-    payload = _finding_payload(verb, finding)
+    word_counts = _lookup_word_counts(conn, _cited_paths(verb, finding))
+    payload = _finding_payload(verb, finding, word_counts)
     rules = falsification_rules_for(verb, finding)
 
     existing = conn.execute(
@@ -385,12 +422,22 @@ def _evaluate_rule(
         return "pending", ""
 
     if kind == "candidate_shrinks":
-        cur = state.get(p["rel_path"])
+        rel = p["rel_path"]
+        cur = state.get(rel)
         if not cur:
-            return "falsified", f"{p['rel_path']} no longer exists in the vault"
-        # Compare to original word_count if we kept it; v0 finding payload
-        # didn't preserve word_count, so we approximate via "much smaller than typical"
-        # — fall back to pending for now. Future v1 can record word_count at log time.
+            return "falsified", f"{rel} no longer exists in the vault"
+        original = (finding.get("word_counts_at_log") or {}).get(rel)
+        if not original or original <= 0:
+            # Legacy brief (logged before v0.0.13) — no baseline to compare against.
+            # Stay pending so older findings don't get spuriously falsified.
+            return "pending", ""
+        current = cur["word_count"] or 0
+        drop_pct = (original - current) / original * 100
+        if drop_pct >= p["drop_pct"]:
+            return "falsified", (
+                f"{rel} shrank {drop_pct:.0f}% ({original} → {current} words) — "
+                f"you actively dismantled the claim"
+            )
         return "pending", ""
 
     if kind == "no_new_validators":
@@ -411,7 +458,23 @@ def _evaluate_rule(
         return "pending", ""
 
     if kind == "either_shrinks":
-        # See candidate_shrinks: needs original word_count at log time. v0: pending.
+        a, b = p["a"], p["b"]
+        baseline = finding.get("word_counts_at_log") or {}
+        if not baseline.get(a) and not baseline.get(b):
+            # Legacy brief — no baseline at all. Stay pending.
+            return "pending", ""
+        for rel in (a, b):
+            original = baseline.get(rel)
+            cur = state.get(rel)
+            if not original or original <= 0 or not cur:
+                continue
+            current = cur["word_count"] or 0
+            drop_pct = (original - current) / original * 100
+            if drop_pct >= p["drop_pct"]:
+                return "falsified", (
+                    f"{rel} shrank {drop_pct:.0f}% ({original} → {current} words) — "
+                    f"the underlying idea was discarded"
+                )
         return "pending", ""
 
     if kind == "neither_edited":

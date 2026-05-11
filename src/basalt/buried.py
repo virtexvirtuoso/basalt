@@ -1,4 +1,6 @@
-"""Buried Insight algorithm.
+"""Buried Insight verb — finds old, dormant notes that recent work validates.
+
+Site language: *"The brilliant thing you wrote and forgot about."*
 
 Finds: an old note (>= MIN_AGE_DAYS) that the user wrote once and never
 returned to (no self-update in >= MIN_DORMANT_DAYS), but that recent notes
@@ -15,10 +17,12 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Any
 
 import numpy as np
 
 from basalt.embed import _blob_to_vec
+from basalt.verb import VerbBase, VerbResult
 
 
 DEFAULT_MIN_AGE_DAYS         = 180     # candidate created at least 6 months ago
@@ -94,6 +98,12 @@ def _parse_date(s: str | None) -> date | None:
 
 def _clamp(v: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, v))
+
+
+def _hub_density(out_links: int, word_count: int) -> float:
+    if word_count <= 0:
+        return 0.0
+    return out_links / max(word_count / 100.0, 1.0)
 
 
 def compute_vault_age_days(conn: sqlite3.Connection, today: date | None = None) -> int:
@@ -418,6 +428,267 @@ def _extract_claim_quote(body: str) -> tuple[str, str]:
     return "", "empty"
 
 
+class BuriedInsightVerb(VerbBase):
+    """Buried Insight verb implementation.
+
+    Finds old, dormant notes that recent work validates via links or semantic similarity.
+    """
+
+    @property
+    def name(self) -> str:
+        return "buried-insight"
+
+    def _threshold(self) -> dict:
+        """Return vault-age-aware thresholds."""
+        vault_age = self._vault_age()
+        if vault_age <= 0:
+            return {
+                "min_age_days": DEFAULT_MIN_AGE_DAYS,
+                "min_dormant_days": DEFAULT_MIN_DORMANT_DAYS,
+                "recent_window_days": DEFAULT_RECENT_WINDOW_DAYS,
+                "vault_age_days": 0,
+            }
+        min_age = self._clamp(vault_age // 2, VAULT_AWARE_MIN_AGE_FLOOR, VAULT_AWARE_MIN_AGE_CEIL)
+        min_dormant = self._clamp(min_age // 3, VAULT_AWARE_DORMANT_FLOOR, VAULT_AWARE_DORMANT_CEIL)
+        recent = self._clamp(min(min_age, max(vault_age - 1, 1)), VAULT_AWARE_RECENT_FLOOR, VAULT_AWARE_RECENT_CEIL)
+        return {
+            "min_age_days": min_age,
+            "min_dormant_days": min_dormant,
+            "recent_window_days": recent,
+            "vault_age_days": vault_age,
+        }
+
+    def _candidates(self) -> list[dict]:
+        """Return all notes as potential candidates."""
+        rows = self.conn.execute(
+            """
+            SELECT n.id, n.rel_path, n.stem, n.title, n.created, n.updated,
+                   n.word_count, n.content, e.vec
+            FROM notes n
+            LEFT JOIN embeddings e ON e.note_id = n.id
+            """
+        ).fetchall()
+
+        out_link_counts = dict(self.conn.execute(
+            "SELECT from_note_id, COUNT(DISTINCT target) FROM links GROUP BY from_note_id"
+        ).fetchall())
+
+        notes = []
+        for r in rows:
+            nid = r["id"]
+            notes.append({
+                "id": nid,
+                "rel_path": r["rel_path"],
+                "stem": r["stem"],
+                "title": r["title"],
+                "created": _parse_date(r["created"]),
+                "updated": _parse_date(r["updated"]),
+                "word_count": r["word_count"],
+                "content": r["content"],
+                "vec": _blob_to_vec(r["vec"]) if r["vec"] else None,
+                "out_links": out_link_counts.get(nid, 0),
+            })
+        return notes
+
+    def _filter(self, candidate: dict, thresholds: dict) -> bool:
+        """Filter to buried candidates: old, dormant, substantive, not a hub."""
+        min_age_days = thresholds["min_age_days"]
+        min_dormant_days = thresholds["min_dormant_days"]
+        recent_window_days = thresholds["recent_window_days"]
+
+        age_cutoff = self.today - timedelta(days=min_age_days)
+        dormant_cutoff = self.today - timedelta(days=min_dormant_days)
+
+        if not candidate["created"] or candidate["created"] > age_cutoff:
+            return False
+        if not candidate["updated"] or candidate["updated"] > dormant_cutoff:
+            return False
+        if candidate["word_count"] < MIN_WORD_COUNT:
+            return False
+
+        density = _hub_density(candidate["out_links"], candidate["word_count"])
+        if density > HUB_DENSITY_HARD:
+            return False
+
+        return True
+
+    def _score(self, candidate: dict, thresholds: dict, recent_ids: set, vec_by_id: dict, inbound_recent_ids: dict, semantic: dict) -> float:
+        """Score a candidate: explicit links count double, semantic similarity averaged, hub penalty applied."""
+        nid = candidate["id"]
+        explicit = len(inbound_recent_ids.get(nid, set()))
+        sem = semantic.get(nid, [])
+
+        sem_score = sum(s for _, s in sem) if sem else 0.0
+        raw_score = (explicit * 2.0) + sem_score + (0.05 * (self.today - candidate["updated"]).days / 30)
+
+        density = _hub_density(candidate["out_links"], candidate["word_count"])
+        excess = max(0.0, density - HUB_DENSITY_SOFT)
+        penalty = 1.0 / (1.0 + (2.0 * excess) ** 2)
+
+        return raw_score * penalty
+
+    def _quote(self, candidate: dict) -> tuple[str, str]:
+        """Extract load-bearing quote from candidate."""
+        if len(candidate["content"]) < MIN_BODY_FOR_QUOTE:
+            return "", "empty"
+        return _extract_claim_quote(candidate["content"])
+
+    def _build_finding(self, candidate: dict, quote: str, quote_provenance: str, thresholds: dict, vault_age: int,
+                       inbound_recent_ids: dict, semantic: dict, notes_by_id: dict) -> BuriedInsight:
+        """Build BuriedInsight from scored candidate."""
+        nid = candidate["id"]
+
+        # Build validator list
+        validators: list[Validator] = []
+        seen: set[int] = set()
+
+        for vid in inbound_recent_ids.get(nid, set()):
+            if vid in seen:
+                continue
+            seen.add(vid)
+            n = notes_by_id[vid]
+            validators.append(Validator(
+                note_id=vid, rel_path=n["rel_path"], title=n["title"],
+                updated=n["updated"], sim=1.0, explicit_link=True,
+            ))
+
+        for vid, sim in semantic.get(nid, []):
+            if vid in seen:
+                continue
+            seen.add(vid)
+            n = notes_by_id[vid]
+            validators.append(Validator(
+                note_id=vid, rel_path=n["rel_path"], title=n["title"],
+                updated=n["updated"], sim=float(sim), explicit_link=False,
+            ))
+
+        validators.sort(key=lambda v: (-int(v.explicit_link), -v.sim, v.updated or date.min))
+        validators = validators[:TOP_K_VALIDATORS]
+
+        density = _hub_density(candidate["out_links"], candidate["word_count"])
+        excess = max(0.0, density - HUB_DENSITY_SOFT)
+        penalty = 1.0 / (1.0 + (2.0 * excess) ** 2)
+
+        explicit = len(inbound_recent_ids.get(nid, set()))
+        sem = semantic.get(nid, [])
+        score = ((explicit * 2.0) + sum(s for _, s in sem)) * penalty
+
+        cand = Candidate(
+            note_id=nid,
+            rel_path=candidate["rel_path"],
+            title=candidate["title"],
+            stem=candidate["stem"],
+            created=candidate["created"],
+            updated=candidate["updated"],
+            content=candidate["content"],
+            word_count=candidate["word_count"],
+            inbound_recent=explicit,
+            semantic_validators=sem,
+            hub_density=density,
+            hub_penalty=penalty,
+            score=score,
+        )
+
+        return BuriedInsight(
+            candidate=cand,
+            quote=quote,
+            quote_provenance=quote_provenance,
+            validators=validators,
+            thresholds=thresholds,
+            vault_age_days=vault_age,
+        )
+
+    def run(self, top_n: int = 1, vault_aware: bool = True) -> VerbResult:
+        """Execute the Buried Insight verb."""
+        thresholds = self._threshold() if vault_aware else {
+            "min_age_days": DEFAULT_MIN_AGE_DAYS,
+            "min_dormant_days": DEFAULT_MIN_DORMANT_DAYS,
+            "recent_window_days": DEFAULT_RECENT_WINDOW_DAYS,
+            "vault_age_days": 0,
+        }
+        vault_age = thresholds["vault_age_days"]
+
+        min_age_days = thresholds["min_age_days"]
+        min_dormant_days = thresholds["min_dormant_days"]
+        recent_window_days = thresholds["recent_window_days"]
+
+        age_cutoff = self.today - timedelta(days=min_age_days)
+        dormant_cutoff = self.today - timedelta(days=min_dormant_days)
+        recent_cutoff = self.today - timedelta(days=recent_window_days)
+
+        # Get all notes
+        notes = self._candidates()
+        notes_by_id = {n["id"]: n for n in notes}
+        vec_by_id = {n["id"]: n["vec"] for n in notes if n["vec"] is not None}
+
+        # Identify recent and candidate IDs
+        recent_ids = {
+            n["id"] for n in notes
+            if n["updated"] and n["updated"] >= recent_cutoff and n["word_count"] >= MIN_WORD_COUNT
+        }
+        candidate_ids = {
+            n["id"] for n in notes
+            if self._filter(n, thresholds)
+        }
+
+        if not candidate_ids or not recent_ids:
+            return VerbResult(verb=self.name, findings=[], thresholds=thresholds, vault_age_days=vault_age)
+
+        # Build inbound recent links
+        inbound_recent_ids: dict[int, set[int]] = {nid: set() for nid in candidate_ids}
+        cur = self.conn.execute(
+            f"""
+            SELECT l.target_note_id AS to_id, l.from_note_id AS from_id
+            FROM links l
+            WHERE l.target_note_id IS NOT NULL
+              AND l.target_note_id IN ({",".join("?"*len(candidate_ids))})
+              AND l.from_note_id   IN ({",".join("?"*len(recent_ids))})
+            """,
+            (*candidate_ids, *recent_ids),
+        )
+        for row in cur.fetchall():
+            inbound_recent_ids[row["to_id"]].add(row["from_id"])
+
+        # Semantic validation
+        semantic: dict[int, list[tuple[int, float]]] = {nid: [] for nid in candidate_ids}
+        if vec_by_id:
+            recent_with_vec = [(rid, vec_by_id[rid]) for rid in recent_ids if rid in vec_by_id]
+            if recent_with_vec:
+                recent_ids_arr = np.array([rid for rid, _ in recent_with_vec])
+                recent_mat = np.stack([v for _, v in recent_with_vec])
+                for nid in candidate_ids:
+                    v = vec_by_id.get(nid)
+                    if v is None:
+                        continue
+                    sims = recent_mat @ v
+                    mask = sims >= MIN_SIM
+                    if mask.any():
+                        hits = list(zip(recent_ids_arr[mask].tolist(), sims[mask].tolist()))
+                        hits.sort(key=lambda x: -x[1])
+                        semantic[nid] = hits[:TOP_K_VALIDATORS]
+
+        # Score and sort candidates
+        scored = []
+        for nid in candidate_ids:
+            n = notes_by_id[nid]
+            score = self._score(n, thresholds, recent_ids, vec_by_id, inbound_recent_ids, semantic)
+            scored.append((score, n))
+        scored.sort(key=lambda x: -x[0])
+
+        # Build findings
+        findings = []
+        for score, n in scored[:top_n]:
+            quote, provenance = self._quote(n)
+            if not quote:
+                continue
+            finding = self._build_finding(n, quote, provenance, thresholds, vault_age, inbound_recent_ids, semantic, notes_by_id)
+            findings.append(finding)
+
+        return VerbResult(verb=self.name, findings=findings, thresholds=thresholds, vault_age_days=vault_age)
+
+
+# ── Backwards-compatible wrappers ─────────────────────────────────
+
 def find_buried_insights(
     conn: sqlite3.Connection,
     today: date | None = None,
@@ -427,215 +698,10 @@ def find_buried_insights(
     vault_aware: bool = True,
     top_n: int = 1,
 ) -> list[BuriedInsight]:
-    """Run the Buried Insight algorithm. Returns the top N strongest candidates.
-
-    Thresholds default to vault-age-aware values; explicit overrides win.
-    Pass `vault_aware=False` to fall back to fixed defaults.
-    """
-    today = today or date.today()
-
-    if vault_aware and (min_age_days is None or min_dormant_days is None or recent_window_days is None):
-        derived = compute_vault_aware_thresholds(conn, today)
-        if min_age_days is None:        min_age_days = derived["min_age_days"]
-        if min_dormant_days is None:    min_dormant_days = derived["min_dormant_days"]
-        if recent_window_days is None:  recent_window_days = derived["recent_window_days"]
-        vault_age = derived["vault_age_days"]
-    else:
-        if min_age_days is None:        min_age_days = DEFAULT_MIN_AGE_DAYS
-        if min_dormant_days is None:    min_dormant_days = DEFAULT_MIN_DORMANT_DAYS
-        if recent_window_days is None:  recent_window_days = DEFAULT_RECENT_WINDOW_DAYS
-        vault_age = compute_vault_age_days(conn, today)
-
-    age_cutoff      = today - timedelta(days=min_age_days)
-    dormant_cutoff  = today - timedelta(days=min_dormant_days)
-    recent_cutoff   = today - timedelta(days=recent_window_days)
-    thresholds_used = {
-        "min_age_days": min_age_days,
-        "min_dormant_days": min_dormant_days,
-        "recent_window_days": recent_window_days,
-    }
-
-    # Pull all notes with their embeddings (if any)
-    rows = conn.execute(
-        """
-        SELECT n.id, n.rel_path, n.stem, n.title, n.created, n.updated,
-               n.word_count, n.content,
-               e.vec
-        FROM notes n
-        LEFT JOIN embeddings e ON e.note_id = n.id
-        """
-    ).fetchall()
-
-    # Outgoing unique-link counts (for hub-density detection)
-    out_link_counts = dict(conn.execute(
-        "SELECT from_note_id, COUNT(DISTINCT target) FROM links GROUP BY from_note_id"
-    ).fetchall())
-
-    notes_by_id = {}
-    vec_by_id   = {}
-    for r in rows:
-        nid = r["id"]
-        notes_by_id[nid] = {
-            "id": nid,
-            "rel_path": r["rel_path"],
-            "stem": r["stem"],
-            "title": r["title"],
-            "created": _parse_date(r["created"]),
-            "updated": _parse_date(r["updated"]),
-            "word_count": r["word_count"],
-            "content": r["content"],
-        }
-        if r["vec"]:
-            vec_by_id[nid] = _blob_to_vec(r["vec"])
-
-    # Identify "recent notes" and "candidate (buried) notes"
-    recent_ids = [
-        nid for nid, n in notes_by_id.items()
-        if n["updated"] and n["updated"] >= recent_cutoff
-        and n["word_count"] >= MIN_WORD_COUNT
-    ]
-    def _hub_density(nid: int, wc: int) -> float:
-        if wc <= 0:
-            return 0.0
-        return out_link_counts.get(nid, 0) / max(wc / 100.0, 1.0)
-
-    candidate_ids = [
-        nid for nid, n in notes_by_id.items()
-        if n["created"] and n["created"] <= age_cutoff
-        and n["updated"] and n["updated"] <= dormant_cutoff
-        and n["word_count"] >= MIN_WORD_COUNT
-        and _hub_density(nid, n["word_count"]) <= HUB_DENSITY_HARD
-    ]
-
-    if not candidate_ids or not recent_ids:
-        return None
-
-    # Build inbound-recent-link counts via the explicit graph
-    inbound_recent = {nid: 0 for nid in candidate_ids}
-    inbound_recent_ids: dict[int, set[int]] = {nid: set() for nid in candidate_ids}
-    cur = conn.execute(
-        f"""
-        SELECT l.target_note_id AS to_id, l.from_note_id AS from_id
-        FROM links l
-        WHERE l.target_note_id IS NOT NULL
-          AND l.target_note_id IN ({",".join("?"*len(candidate_ids))})
-          AND l.from_note_id   IN ({",".join("?"*len(recent_ids))})
-        """,
-        (*candidate_ids, *recent_ids),
-    )
-    for row in cur.fetchall():
-        inbound_recent[row["to_id"]] += 1
-        inbound_recent_ids[row["to_id"]].add(row["from_id"])
-
-    # Semantic validation: for each candidate with an embedding, find recent notes
-    # whose embeddings cross the similarity threshold.
-    semantic = {nid: [] for nid in candidate_ids}
-    if vec_by_id:
-        recent_with_vec = [(rid, vec_by_id[rid]) for rid in recent_ids if rid in vec_by_id]
-        if recent_with_vec:
-            recent_ids_arr  = np.array([rid for rid, _ in recent_with_vec])
-            recent_mat      = np.stack([v for _, v in recent_with_vec])
-            for nid in candidate_ids:
-                v = vec_by_id.get(nid)
-                if v is None:
-                    continue
-                sims = recent_mat @ v
-                mask = sims >= MIN_SIM
-                if not mask.any():
-                    continue
-                hits = list(zip(recent_ids_arr[mask].tolist(), sims[mask].tolist()))
-                hits.sort(key=lambda x: -x[1])
-                semantic[nid] = hits[:TOP_K_VALIDATORS]
-
-    # Score each candidate
-    cands: list[Candidate] = []
-    for nid in candidate_ids:
-        n = notes_by_id[nid]
-        explicit = inbound_recent[nid]
-        sem      = semantic[nid]
-        # Combined validators = explicit links + semantic hits (dedup by note id)
-        explicit_validators = inbound_recent_ids[nid]
-        all_validator_ids = set(explicit_validators) | {sid for sid, _ in sem}
-        if len(all_validator_ids) < MIN_VALIDATORS:
-            continue
-        # Score: explicit links count double; semantic similarity averaged.
-        # Apply soft hub-density penalty: notes with high outgoing-link density
-        # are likely MOCs/indexes, not buried insights.
-        sem_score = sum(s for _, s in sem) if sem else 0.0
-        raw_score = (explicit * 2.0) + sem_score + (0.05 * (today - n["updated"]).days / 30)
-        density   = _hub_density(nid, n["word_count"])
-        excess    = max(0.0, density - HUB_DENSITY_SOFT)
-        # Inverse-square penalty with 2× excess scaling — bites in 0.5–1.5 gray zone:
-        # density 0.5 → 1.00 (no penalty)
-        # density 0.7 → 0.86
-        # density 1.0 → 0.50
-        # density 1.3 → 0.28
-        penalty   = 1.0 / (1.0 + (2.0 * excess) ** 2)
-        score     = raw_score * penalty
-        cands.append(Candidate(
-            note_id=nid,
-            rel_path=n["rel_path"],
-            title=n["title"],
-            stem=n["stem"],
-            created=n["created"],
-            updated=n["updated"],
-            content=n["content"],
-            word_count=n["word_count"],
-            inbound_recent=explicit,
-            semantic_validators=sem,
-            hub_density=density,
-            hub_penalty=penalty,
-            score=score,
-        ))
-
-    if not cands:
-        return []
-    cands.sort(key=lambda c: -c.score)
-
-    results: list[BuriedInsight] = []
-    for cand in cands:
-        if len(results) >= top_n:
-            break
-        if len(cand.content) < MIN_BODY_FOR_QUOTE:
-            continue
-        quote, prov = _extract_claim_quote(cand.content)
-        if not quote:
-            continue
-
-        # Compose validator list (explicit + semantic, dedup, ordered by recency)
-        validators: list[Validator] = []
-        seen: set[int] = set()
-        for vid in inbound_recent_ids[cand.note_id]:
-            if vid in seen:
-                continue
-            seen.add(vid)
-            n = notes_by_id[vid]
-            validators.append(Validator(
-                note_id=vid, rel_path=n["rel_path"], title=n["title"],
-                updated=n["updated"], sim=1.0, explicit_link=True,
-            ))
-        for vid, sim in cand.semantic_validators:
-            if vid in seen:
-                continue
-            seen.add(vid)
-            n = notes_by_id[vid]
-            validators.append(Validator(
-                note_id=vid, rel_path=n["rel_path"], title=n["title"],
-                updated=n["updated"], sim=float(sim), explicit_link=False,
-            ))
-        validators.sort(key=lambda v: (-int(v.explicit_link), -v.sim, v.updated or date.min), reverse=False)
-        validators = validators[:TOP_K_VALIDATORS]
-
-        results.append(BuriedInsight(
-            candidate=cand,
-            quote=quote,
-            quote_provenance=prov,
-            validators=validators,
-            thresholds=thresholds_used,
-            vault_age_days=vault_age,
-        ))
-
-    return results
+    """Run the Buried Insight verb. Returns top N strongest candidates."""
+    verb = BuriedInsightVerb(conn, today)
+    result = verb.run(top_n=top_n, vault_aware=vault_aware)
+    return result.findings
 
 
 def find_buried_insight(
@@ -646,14 +712,9 @@ def find_buried_insight(
     recent_window_days: int | None = None,
     vault_aware: bool = True,
 ) -> BuriedInsight | None:
-    """Backwards-compatible single-result wrapper around find_buried_insights."""
+    """Backwards-compatible single-result wrapper."""
     results = find_buried_insights(
-        conn,
-        today=today,
-        min_age_days=min_age_days,
-        min_dormant_days=min_dormant_days,
-        recent_window_days=recent_window_days,
-        vault_aware=vault_aware,
-        top_n=1,
+        conn, today=today, min_age_days=min_age_days, min_dormant_days=min_dormant_days,
+        recent_window_days=recent_window_days, vault_aware=vault_aware, top_n=1,
     )
     return results[0] if results else None

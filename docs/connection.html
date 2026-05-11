@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connection — Basalt</title>
+    <meta name="description" content="The two ideas in different folders that turn out to be the same idea. Basalt finds cross-folder duplicate pairs.">
+    <meta property="og:title" content="Connection — Basalt">
+    <meta property="og:description" content="The two ideas in different folders that turn out to be the same idea.">
+    <meta property="og:image" content="https://virtuosoai.dev/basalt/og.png">
+    <meta property="og:url" content="https://virtuosoai.dev/basalt/connection.html">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Connection — Basalt">
+    <meta name="twitter:description" content="The two ideas in different folders that turn out to be the same idea.">
+    <meta name="twitter:image" content="https://virtuosoai.dev/basalt/og.png">
+    <style>
+        :root { --bg: #0E0D0C; --fg: #EFE9E2; --accent: #D9824B; --muted: #C9C0B4; --dim: #7A7269; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 3rem 2rem; max-width: 800px; margin: 0 auto; }
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 0.5rem; }
+        h2 { color: var(--accent); border-bottom: 1px solid var(--dim); padding-bottom: 0.5rem; margin-top: 2.5rem; }
+        .tagline { font-style: italic; color: var(--muted); font-size: 1.3rem; margin-bottom: 2rem; }
+        code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.5rem; border-radius: 4px; font-family: "JetBrains Mono", monospace; font-size: 0.9em; }
+        pre { background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--dim); }
+        pre code { background: none; padding: 0; }
+        a { color: var(--accent); }
+        .demo-box { margin: 2rem 0; text-align: center; }
+        .demo-box img { max-width: 100%; border: 1px solid var(--accent); border-radius: 8px; }
+        .demo-box a { display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent); color: var(--bg); text-decoration: none; border-radius: 4px; font-weight: bold; }
+        ul { padding-left: 1.5rem; }
+        li { margin: 0.5rem 0; }
+        hr { border: none; border-top: 1px solid var(--dim); margin: 2rem 0; }
+    </style>
+</head>
+<body>
+    <h1>Connection</h1>
+    <p class="tagline">The two ideas in different folders that turn out to be the same idea.</p>
+    <div class="demo-box" style="margin: 1.5rem 0;">
+        <p style="color: var(--muted); margin-bottom: 1rem;"><strong>v0 Shipped</strong> — Running on 2,847 notes</p>
+        <img src="connection.gif" alt="Connection Demo" style="max-width: 100%; border: 1px solid var(--accent); border-radius: 8px;">
+        <div style="margin-top: 1rem;">
+            <a href="connection.mp4" download style="display: inline-block; margin-right: 1rem; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">🎥 Download MP4</a>
+            <a href="connection-landing.md" style="display: inline-block; padding: 0.5rem 1rem; background: rgba(217, 130, 75, 0.2); color: var(--accent); text-decoration: none; border-radius: 4px; font-weight: bold;">📄 View Markdown</a>
+        </div>
+    </div>
+
+    <h2>What It Does</h2>
+    <p>Finds pairs of notes in <strong>different folders</strong> that express the <strong>same idea</strong> — high semantic similarity, low lexical overlap, separated by folder structure.</p>
+    <p>Where <strong>Implicit Thesis</strong> finds <em>clusters</em> of 3+ notes, <strong>Connection</strong> finds <em>pairs</em> — you read them side-by-side and realize you've had the same insight twice, in different contexts.</p>
+
+    <h2>How It Works</h2>
+    <ol>
+        <li><strong>Embedding Similarity</strong> — Computes cosine similarity between all note pairs (threshold ≥ 0.72)</li>
+        <li><strong>Folder Gate</strong> — Only surfaces pairs in different top-level folders</li>
+        <li><strong>Lexical Diversity</strong> — Penalizes pairs with high word overlap</li>
+        <li><strong>Score Ranking</strong> — Ranks by <code>similarity × (1 - lexical_overlap) × folder_distance_bonus</code></li>
+        <li><strong>Quote Extraction</strong> — Surfaces the load-bearing sentence from each note</li>
+    </ol>
+
+    <h2>Example Output</h2>
+    <pre><code>## Connection
+
+### 1. Cross-Folder Duplicate
+
+**Similarity:** 0.84 | **Score:** 0.791
+
+#### A: Distribution Moat
+`02-Projects/Maestro/Strategy/Distribution-Moat.md`
+
+&gt; What separates us isn't the alpha — it's how fast we ship alpha.
+
+#### B: SignalBot Competitive Edge
+`02-Projects/SignalBot/COMPETITIVE.md`
+
+&gt; Speed without adaptive intelligence is just expensive latency.</code></pre>
+
+    <h2>The Unlock</h2>
+    <p>You've already solved the same problem twice. Maybe three times.</p>
+    <p>Connection surfaces the duplicate insights hiding in different folders — written at different times, in different contexts, for different projects. Reading them side-by-side reveals the through-line: you keep arriving at the same truth from different directions.</p>
+
+    <h2>Phase Roadmap</h2>
+    <ul>
+        <li><strong>v0 (Shipped):</strong> Pairwise similarity — surfaces cross-folder duplicates for human review.</li>
+        <li><strong>v1 (Pro):</strong> LLM synthesis — feeds both notes to a frontier model, returns a one-sentence "unified insight" statement.</li>
+        <li><strong>v2 (Team):</strong> Cross-user connection detection — finds the same idea appearing in multiple team members' vaults.</li>
+    </ul>
+
+    <h2>API</h2>
+    <pre><code>from basalt.connection import ConnectionVerb
+
+verb = ConnectionVerb(conn)
+result = verb.run(top_n=3, min_sim=0.72)
+
+for pair in result.findings:
+    print(f"A: {pair.note_a_title} ({pair.note_a_path})")
+    print(f"B: {pair.note_b_title} ({pair.note_b_path})")
+    print(f"Similarity: {pair.similarity:.2f}")</code></pre>
+
+    <h2>Pricing</h2>
+    <ul>
+        <li><strong>Free Tier:</strong> 1 connection per week</li>
+        <li><strong>Pro ($12/mo):</strong> Daily connection + LLM synthesis (v1)</li>
+        <li><strong>Team ($49/mo):</strong> Cross-user connection detection (v2)</li>
+    </ul>
+
+    <h2>Demo</h2>
+    <div style="background: rgba(217, 130, 75, 0.05); border: 1px solid var(--accent); border-radius: 8px; padding: 1.5rem; margin: 2rem 0;">
+        <p style="margin: 0 0 1rem 0; color: var(--fg);"><strong>Real Example from Fernando's Vault</strong></p>
+        <p style="margin: 0; color: var(--muted);">Found the same competitive insight written twice: once in the Maestro strategy doc, once in SignalBot competitive analysis. Different contexts, different audiences, same truth. Merged into a single source-of-truth doc and updated both projects.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>CLI</strong></p>
+            <p style="color: var(--muted); margin: 0;"><code>basalt brief --section connection</code></p>
+        </div>
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>GitHub</strong></p>
+            <p style="color: var(--muted); margin: 0;"><a href="https://github.com/ffv/basalt" style="color: var(--accent);">github.com/ffv/basalt</a></p>
+        </div>
+    </div>
+    <div style="padding-top: 2rem; border-top: 1px solid var(--dim); color: var(--dim); font-size: 0.9rem;">
+        <p style="margin: 0 0 0.5rem 0;">Built by <a href="https://virtuosoai.dev" style="color: var(--muted);">Fernando Villar</a> | <a href="mailto:fernando@virtuosocrypto.com" style="color: var(--muted);">fernando@virtuosocrypto.com</a></p>
+        <p style="margin: 0;">← <a href="implicit-thesis.html" style="color: var(--accent);">Back to all verbs</a> | Next: <a href="contradiction.html" style="color: var(--accent);">Contradiction →</a></p>
+    </div>
+</body>
+</html>

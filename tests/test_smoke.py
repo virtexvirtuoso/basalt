@@ -730,3 +730,162 @@ def test_vault_aware_thresholds_scale_with_age(tmp_path):
     assert t["min_age_days"] == 365, "ceiling should bind for 2-year vault"
     assert t["min_dormant_days"] <= 180
     conn.close()
+
+
+# ── Calibration v1: word_count-at-log-time (v0.0.13) ──────────────────
+
+def _seed_note(conn, rel_path: str, word_count: int) -> int:
+    """Test helper — insert one note row with a given word_count."""
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    cur = conn.execute(
+        "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        (rel_path, rel_path, rel_path, today, today, word_count, "body", rel_path),
+    )
+    return cur.fetchone()[0]
+
+
+def test_audit_falsifies_buried_when_candidate_shrinks_past_threshold(tmp_path):
+    """v0.0.13: candidate_shrinks should fire when cited note's word_count drops
+    more than `drop_pct` (default 30) from the value snapshotted at log time."""
+    from types import SimpleNamespace
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    rel = "Projects/Big-Idea.md"
+    _seed_note(conn, rel, word_count=1000)
+
+    fake = SimpleNamespace(
+        candidate=SimpleNamespace(rel_path=rel, title="Big Idea", score=0.9),
+        quote="the load-bearing punchline",
+        quote_provenance="prose",
+        validators=[(1, 0.8), (2, 0.85)],
+    )
+    bid = record_finding(conn, "buried-insight", fake)
+    assert bid is not None
+
+    # Shrink the note from 1000 → 150 words (85% drop, way past 30% threshold).
+    conn.execute("UPDATE notes SET word_count = ? WHERE rel_path = ?", (150, rel))
+    conn.commit()
+
+    results = audit_pending(conn)
+    conn.close()
+    shrink_results = [r for r in results if r.rule_kind == "candidate_shrinks"]
+    assert shrink_results, f"expected candidate_shrinks to fire, got {[r.rule_kind for r in results]}"
+    assert shrink_results[0].new_status == "falsified"
+    assert "shrank" in shrink_results[0].reason
+    assert "1000" in shrink_results[0].reason and "150" in shrink_results[0].reason
+
+
+def test_audit_falsifies_connection_when_either_pair_member_shrinks(tmp_path):
+    """v0.0.13: either_shrinks should fire when either note in a Connection
+    pair loses >50% of its content."""
+    from types import SimpleNamespace
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    a, b = "X/a.md", "Y/b.md"
+    _seed_note(conn, a, word_count=500)
+    _seed_note(conn, b, word_count=500)
+
+    fake = SimpleNamespace(
+        note_a_path=a, note_a_quote="qa", note_a_quote_provenance="p",
+        note_b_path=b, note_b_quote="qb", note_b_quote_provenance="p",
+        similarity=0.9,
+    )
+    record_finding(conn, "connection", fake)
+
+    # Shrink note A from 500 → 100 (80% drop, past the 50% threshold).
+    conn.execute("UPDATE notes SET word_count = ? WHERE rel_path = ?", (100, a))
+    conn.commit()
+
+    results = audit_pending(conn)
+    conn.close()
+    shrink_results = [r for r in results if r.rule_kind == "either_shrinks"]
+    assert shrink_results, f"expected either_shrinks to fire, got {[r.rule_kind for r in results]}"
+    assert shrink_results[0].new_status == "falsified"
+    assert a in shrink_results[0].reason
+
+
+def test_audit_keeps_buried_pending_when_shrink_below_threshold(tmp_path):
+    """Sanity gate — a small content edit (well under drop_pct) must not
+    falsify. Threshold respect, not blanket fire-on-any-change."""
+    from types import SimpleNamespace
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    rel = "Projects/Mild-Edit.md"
+    _seed_note(conn, rel, word_count=1000)
+
+    fake = SimpleNamespace(
+        candidate=SimpleNamespace(rel_path=rel, title="Mild Edit", score=0.7),
+        quote="q",
+        quote_provenance="prose",
+        validators=[],
+    )
+    record_finding(conn, "buried-insight", fake)
+
+    # Shrink only 10% — below 30% threshold.
+    conn.execute("UPDATE notes SET word_count = ? WHERE rel_path = ?", (900, rel))
+    conn.commit()
+
+    results = audit_pending(conn)
+    conn.close()
+    # No candidate_shrinks result should appear — note unchanged enough.
+    assert not any(r.rule_kind == "candidate_shrinks" for r in results), (
+        f"candidate_shrinks fired on a 10% drop; expected no shrink verdict. "
+        f"results={[(r.rule_kind, r.new_status) for r in results]}"
+    )
+
+
+def test_audit_legacy_payload_without_word_counts_stays_pending(tmp_path):
+    """Backfill semantics — briefs logged before v0.0.13 (no `word_counts_at_log`
+    in payload) must stay pending forever for shrink rules, never falsified.
+    The shrink baseline is missing, so no comparison is possible."""
+    import json as _json
+    db = tmp_path / "test.db"
+    conn = open_db(db)
+
+    rel = "Old/Pre-v013.md"
+    _seed_note(conn, rel, word_count=200)  # already shrunk vs. hypothetical past
+
+    # Hand-craft a legacy brief payload: no `word_counts_at_log` field at all.
+    legacy_payload = {
+        "rel_path": rel,
+        "title": "Legacy",
+        "quote": "q",
+        "quote_provenance": "prose",
+        "score": 0.5,
+        "validator_count": 0,
+    }
+    legacy_rules = [
+        {
+            "kind": "candidate_shrinks",
+            "params": {"rel_path": rel, "drop_pct": 30},
+            "text": "wrong if shrinks > 30%",
+        },
+    ]
+    from datetime import date as _date
+    conn.execute(
+        "INSERT INTO briefs (verb, finding_key, finding_json, falsification, created_at, status) "
+        "VALUES (?, ?, ?, ?, ?, 'pending')",
+        ("buried-insight", f"buried-insight:{rel}",
+         _json.dumps(legacy_payload), _json.dumps(legacy_rules),
+         _date.today().isoformat()),
+    )
+    conn.commit()
+
+    results = audit_pending(conn)
+    # Note still exists, no baseline to compare → must stay pending.
+    falsified = [r for r in results if r.new_status == "falsified"]
+    assert not falsified, (
+        f"legacy brief without word_counts_at_log was falsified; expected pending. "
+        f"got: {[(r.rule_kind, r.new_status, r.reason) for r in results]}"
+    )
+    # Verify the brief is still pending in DB
+    status = conn.execute(
+        "SELECT status FROM briefs WHERE verb = 'buried-insight'"
+    ).fetchone()[0]
+    conn.close()
+    assert status == "pending", f"expected pending, got {status}"

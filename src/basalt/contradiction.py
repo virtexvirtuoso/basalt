@@ -1,4 +1,4 @@
-"""Contradiction algorithm — v0 heuristic.
+"""Contradiction verb — finds notes that can't both be true.
 
 Site language: *"The two notes you wrote that can't both be true."*
 
@@ -25,6 +25,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from basalt.embed import _blob_to_vec
+from basalt.verb import VerbResult
 from basalt.buried import (
     HUB_DENSITY_HARD,
     HUB_DENSITY_SOFT,
@@ -172,113 +173,135 @@ def _contradiction_evidence(quote_a: str, quote_b: str) -> tuple[float, list[str
     return score, signals
 
 
+class ContradictionVerb:
+    """Contradiction verb implementation.
+
+    Finds pairs of notes that are topically similar but carry opposite-shape lexical signals.
+    Note: Does not inherit from VerbBase because contradiction operates on note pairs,
+    not individual candidates.
+    """
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    @property
+    def name(self) -> str:
+        return "contradiction"
+
+    def run(
+        self,
+        min_sim: float | None = None,
+        top_n: int = DEFAULT_TOP_N,
+    ) -> list[ContradictionPair]:
+        """Execute the Contradiction verb.
+
+        Args:
+            min_sim: Override default topical similarity threshold
+            top_n: Number of contradiction candidates to return
+        """
+        min_sim = min_sim if min_sim is not None else DEFAULT_MIN_SIM
+
+        rows = self.conn.execute(
+            """
+            SELECT n.id, n.rel_path, n.title, n.word_count, n.content, e.vec
+            FROM notes n
+            JOIN embeddings e ON e.note_id = n.id
+            WHERE n.word_count >= ?
+            """,
+            (MIN_WORD_COUNT,),
+        ).fetchall()
+        if len(rows) < 2:
+            return []
+
+        out_link_counts = dict(self.conn.execute(
+            "SELECT from_note_id, COUNT(DISTINCT target) FROM links GROUP BY from_note_id"
+        ).fetchall())
+
+        note_ids = [r["id"] for r in rows]
+        paths = {r["id"]: r["rel_path"] for r in rows}
+        titles = {r["id"]: r["title"] for r in rows}
+        contents = {r["id"]: r["content"] for r in rows}
+        wcs = {r["id"]: r["word_count"] for r in rows}
+        densities = {nid: _hub_density(out_link_counts.get(nid, 0), wcs[nid]) for nid in note_ids}
+        keep_ids = [nid for nid in note_ids if densities[nid] <= HUB_DENSITY_HARD]
+        if len(keep_ids) < 2:
+            return []
+
+        matrix = np.stack([_blob_to_vec(rows[note_ids.index(nid)]["vec"]) for nid in keep_ids])
+        sims = matrix @ matrix.T
+        np.fill_diagonal(sims, -1.0)
+        iu = np.triu_indices(sims.shape[0], k=1)
+        pair_sims = sims[iu]
+
+        qualifying: list[tuple[int, int, float]] = []
+        for i, j, s in zip(iu[0], iu[1], pair_sims):
+            if s < min_sim:
+                continue
+            qualifying.append((keep_ids[int(i)], keep_ids[int(j)], float(s)))
+            if len(qualifying) >= MAX_PAIRS:
+                break
+        if not qualifying:
+            return []
+
+        # Per-pair: extract quotes, run the lexical evidence check, score.
+        quote_cache: dict[int, tuple[str, str]] = {}
+        def _quote(nid: int) -> tuple[str, str]:
+            if nid not in quote_cache:
+                quote_cache[nid] = _extract_claim_quote(contents[nid])
+            return quote_cache[nid]
+
+        scored: list[ContradictionPair] = []
+        for a_id, b_id, s in qualifying:
+            a_quote, a_prov = _quote(a_id)
+            b_quote, b_prov = _quote(b_id)
+            if not a_quote or not b_quote:
+                continue
+            cscore, signals = _contradiction_evidence(a_quote, b_quote)
+            if cscore <= 0.0:
+                continue
+            pa = _hub_penalty(densities[a_id])
+            pb = _hub_penalty(densities[b_id])
+            rank = s * cscore * (pa * pb) ** 0.5
+            scored.append(ContradictionPair(
+                note_a_id=a_id,
+                note_a_path=paths[a_id],
+                note_a_title=titles[a_id],
+                note_a_quote=a_quote,
+                note_a_quote_provenance=a_prov,
+                note_b_id=b_id,
+                note_b_path=paths[b_id],
+                note_b_title=titles[b_id],
+                note_b_quote=b_quote,
+                note_b_quote_provenance=b_prov,
+                similarity=s,
+                contradiction_score=cscore,
+                score=rank,
+                signals=signals,
+            ))
+
+        scored.sort(key=lambda p: -p.score)
+
+        # Diversity: don't return pairs all touching the same note
+        seen: set[int] = set()
+        out: list[ContradictionPair] = []
+        for p in scored:
+            if p.note_a_id in seen or p.note_b_id in seen:
+                continue
+            out.append(p)
+            seen.add(p.note_a_id)
+            seen.add(p.note_b_id)
+            if len(out) >= top_n:
+                break
+        return out
+
+
+# ── Backwards-compatible wrapper ─────────────────────────────────
+
 def find_contradictions(
     conn: sqlite3.Connection,
     min_sim: float = DEFAULT_MIN_SIM,
     top_n: int = DEFAULT_TOP_N,
 ) -> list[ContradictionPair]:
-    """Return top N candidate contradiction pairs.
-
-    A pair (A, B) qualifies when:
-      - cosine(emb(A), emb(B)) ≥ min_sim — they're about the same topic
-      - At least one lexical contradiction signal fires across their quotes
-      - Both notes meet word-count and hub-density floors
-
-    Returned pairs are *candidates*. Mr. V (or the next-stage classifier) is
-    the source of truth on whether the contradiction is real.
-    """
-    rows = conn.execute(
-        """
-        SELECT n.id, n.rel_path, n.title, n.word_count, n.content,
-               e.vec
-        FROM notes n
-        JOIN embeddings e ON e.note_id = n.id
-        WHERE n.word_count >= ?
-        """,
-        (MIN_WORD_COUNT,),
-    ).fetchall()
-    if len(rows) < 2:
-        return []
-
-    out_link_counts = dict(conn.execute(
-        "SELECT from_note_id, COUNT(DISTINCT target) FROM links GROUP BY from_note_id"
-    ).fetchall())
-
-    note_ids = [r["id"] for r in rows]
-    paths    = {r["id"]: r["rel_path"]    for r in rows}
-    titles   = {r["id"]: r["title"]       for r in rows}
-    contents = {r["id"]: r["content"]     for r in rows}
-    wcs      = {r["id"]: r["word_count"]  for r in rows}
-    densities = {nid: _hub_density(out_link_counts.get(nid, 0), wcs[nid]) for nid in note_ids}
-    keep_ids = [nid for nid in note_ids if densities[nid] <= HUB_DENSITY_HARD]
-    if len(keep_ids) < 2:
-        return []
-
-    matrix = np.stack([_blob_to_vec(rows[note_ids.index(nid)]["vec"]) for nid in keep_ids])
-    sims = matrix @ matrix.T
-    np.fill_diagonal(sims, -1.0)
-    iu = np.triu_indices(sims.shape[0], k=1)
-    pair_sims = sims[iu]
-
-    qualifying: list[tuple[int, int, float]] = []
-    for i, j, s in zip(iu[0], iu[1], pair_sims):
-        if s < min_sim:
-            continue
-        qualifying.append((keep_ids[int(i)], keep_ids[int(j)], float(s)))
-        if len(qualifying) >= MAX_PAIRS:
-            break
-    if not qualifying:
-        return []
-
-    # Per-pair: extract quotes, run the lexical evidence check, score.
-    quote_cache: dict[int, tuple[str, str]] = {}
-    def _quote(nid: int) -> tuple[str, str]:
-        if nid not in quote_cache:
-            quote_cache[nid] = _extract_claim_quote(contents[nid])
-        return quote_cache[nid]
-
-    scored: list[ContradictionPair] = []
-    for a_id, b_id, s in qualifying:
-        a_quote, a_prov = _quote(a_id)
-        b_quote, b_prov = _quote(b_id)
-        if not a_quote or not b_quote:
-            continue
-        cscore, signals = _contradiction_evidence(a_quote, b_quote)
-        if cscore <= 0.0:
-            continue
-        pa = _hub_penalty(densities[a_id])
-        pb = _hub_penalty(densities[b_id])
-        # Final ranking: similarity × contradiction signal × hub penalty mean
-        rank = s * cscore * (pa * pb) ** 0.5
-        scored.append(ContradictionPair(
-            note_a_id=a_id,
-            note_a_path=paths[a_id],
-            note_a_title=titles[a_id],
-            note_a_quote=a_quote,
-            note_a_quote_provenance=a_prov,
-            note_b_id=b_id,
-            note_b_path=paths[b_id],
-            note_b_title=titles[b_id],
-            note_b_quote=b_quote,
-            note_b_quote_provenance=b_prov,
-            similarity=s,
-            contradiction_score=cscore,
-            score=rank,
-            signals=signals,
-        ))
-
-    scored.sort(key=lambda p: -p.score)
-
-    # Diversity: same as Connection — don't return three pairs all touching
-    # the same note. Different axes of disagreement.
-    seen: set[int] = set()
-    out: list[ContradictionPair] = []
-    for p in scored:
-        if p.note_a_id in seen or p.note_b_id in seen:
-            continue
-        out.append(p)
-        seen.add(p.note_a_id)
-        seen.add(p.note_b_id)
-        if len(out) >= top_n:
-            break
-    return out
+    """Run the Contradiction verb. Returns top N contradiction candidates."""
+    verb = ContradictionVerb(conn)
+    return verb.run(min_sim=min_sim, top_n=top_n)

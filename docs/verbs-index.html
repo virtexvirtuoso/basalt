@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basalt — Five Verbs</title>
+    <meta name="description" content="Your vault, interrogated. Five verbs that surface buried insights, implicit theses, cross-folder connections, contradictions, and priority drift.">
+    <meta property="og:title" content="Basalt — Your Vault, Interrogated">
+    <meta property="og:description" content="Five verbs that surface what you wrote but forgot. Private beta now.">
+    <meta property="og:image" content="https://virtuosoai.dev/basalt/og.png">
+    <meta property="og:url" content="https://virtuosoai.dev/basalt/">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Basalt — Your Vault, Interrogated">
+    <meta name="twitter:description" content="Five verbs that surface what you wrote but forgot. Private beta now.">
+    <meta name="twitter:image" content="https://virtuosoai.dev/basalt/og.png">
+    <style>
+        :root {
+            --bg: #0E0D0C;
+            --fg: #EFE9E2;
+            --accent: #D9824B;
+            --muted: #C9C0B4;
+            --dim: #7A7269;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            padding: 2rem;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 0.5rem; }
+        h2 { color: var(--accent); border-bottom: 1px solid var(--dim); padding-bottom: 0.5rem; margin-top: 2rem; }
+        .tagline { font-style: italic; color: var(--muted); font-size: 1.2rem; margin-bottom: 2rem; }
+        .verb-card {
+            background: rgba(217, 130, 75, 0.05);
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        .verb-card h3 { color: var(--accent); margin: 0 0 0.5rem 0; }
+        .verb-card a { color: var(--accent); text-decoration: none; }
+        .verb-card a:hover { text-decoration: underline; }
+        code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.4rem; border-radius: 3px; }
+        .demo-links { margin-top: 1rem; }
+        .demo-links a { display: inline-block; margin-right: 1rem; color: var(--muted); }
+        .demo-links a:hover { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Basalt</h1>
+    <p class="tagline">Your vault, interrogated.</p>
+    <p style="color: var(--muted); max-width: 600px; margin-bottom: 2rem;">Five verbs that surface what you wrote but forgot: buried insights, implicit theses, cross-folder connections, contradictions, and priority drift. Your second brain needs a first reader.</p>
+    <div style="background: rgba(217, 130, 75, 0.1); border: 1px solid var(--accent); border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0;">
+        <p style="margin: 0 0 1rem 0; color: var(--fg);"><strong>🧪 Private Beta — Limited Slots</strong></p>
+        <p style="margin: 0 0 1rem 0; color: var(--muted);">Basalt is currently piloting with 3 quant teams. Request early access:</p>
+        <p style="margin: 0;"><a href="waitlist.html" style="display: inline-block; padding: 0.75rem 1.5rem; background: var(--accent); color: var(--bg); text-decoration: none; border-radius: 4px; font-weight: bold;">Request Access →</a></p>
+    </div>
+
+    <div class="verb-card">
+        <h3>1. Buried Insight</h3>
+        <p><em>The brilliant thing you wrote and forgot about.</em></p>
+        <p>Finds old, dormant notes that have been validated by recent activity.</p>
+        <div class="demo-links">
+            <a href="buried-insight-landing.md">📄 Markdown</a>
+            <a href="buried-insight.gif">🎬 GIF</a>
+            <a href="buried-insight.mp4">🎥 MP4</a>
+        </div>
+    </div>
+
+    <div class="verb-card">
+        <h3>2. Implicit Thesis</h3>
+        <p><em>The thing you keep saying without realizing you're saying the same thing.</em></p>
+        <p>Finds clusters of 3+ notes converging on an unnamed through-line.</p>
+        <div class="demo-links">
+            <a href="implicit-thesis-landing.md">📄 Markdown</a>
+            <a href="implicit-thesis.gif">🎬 GIF</a>
+            <a href="implicit-thesis.mp4">🎥 MP4</a>
+        </div>
+    </div>
+
+    <div class="verb-card">
+        <h3>3. Connection</h3>
+        <p><em>The two ideas in different folders that turn out to be the same idea.</em></p>
+        <p>Finds cross-folder duplicate pairs — same insight, different contexts.</p>
+        <div class="demo-links">
+            <a href="connection-landing.md">📄 Markdown</a>
+            <a href="connection.gif">🎬 GIF</a>
+            <a href="connection.mp4">🎥 MP4</a>
+        </div>
+    </div>
+
+    <div class="verb-card">
+        <h3>4. Contradiction</h3>
+        <p><em>The two notes you wrote that can't both be true.</em></p>
+        <p>Detects reversal markers in topically-similar pairs — surfaces incompatible claims.</p>
+        <div class="demo-links">
+            <a href="contradiction-landing.md">📄 Markdown</a>
+            <a href="contradiction.gif">🎬 GIF</a>
+            <a href="contradiction.mp4">🎥 MP4</a>
+        </div>
+    </div>
+
+    <div class="verb-card">
+        <h3>5. Drift</h3>
+        <p><em>What you say is the priority versus what you actually spent the week on.</em></p>
+        <p>Compares stated priorities vs lived priorities — surfaces overworked/underworked projects.</p>
+        <div class="demo-links">
+            <a href="drift-landing.md">📄 Markdown</a>
+            <a href="drift.gif">🎬 GIF</a>
+            <a href="drift.mp4">🎥 MP4</a>
+        </div>
+    </div>
+
+    <hr style="border-color: var(--dim); margin-top: 3rem;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>CLI</strong></p>
+            <p style="color: var(--muted); margin: 0;"><code>basalt brief --section &lt;verb&gt;</code></p>
+        </div>
+        <div>
+            <p style="color: var(--dim); margin: 0 0 0.5rem 0;"><strong>GitHub</strong></p>
+            <p style="color: var(--muted); margin: 0;"><a href="https://github.com/ffv/basalt" style="color: var(--accent);">github.com/ffv/basalt</a></p>
+        </div>
+    </div>
+    <div style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--dim); color: var(--dim); font-size: 0.9rem;">
+        <p style="margin: 0;">Built by <a href="https://virtuosoai.dev" style="color: var(--muted);">Fernando Villar</a> | <a href="mailto:fernando@virtuosocrypto.com" style="color: var(--muted);">fernando@virtuosocrypto.com</a></p>
+        <p style="margin: 0.5rem 0 0 0;">Currently running on 2,847 notes • v0.3.2-alpha</p>
+    </div>
+</body>
+</html>

@@ -1,4 +1,4 @@
-"""Implicit Thesis algorithm — v0 cluster heuristic.
+"""Implicit Thesis verb — finds clusters of notes converging on an unnamed through-line.
 
 Site language: *"The thing you keep saying without realizing you're saying
 the same thing."*
@@ -21,10 +21,14 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import date
+from math import log
+from typing import Any
 
 import numpy as np
 
 from basalt.embed import _blob_to_vec
+from basalt.verb import VerbBase, VerbResult
 from basalt.buried import (
     HUB_DENSITY_HARD,
     HUB_DENSITY_SOFT,
@@ -156,85 +160,157 @@ def _tight_neighborhoods(
     return out
 
 
-def find_implicit_theses(
-    conn: sqlite3.Connection,
-    min_sim: float = DEFAULT_MIN_SIM,
-    min_cluster_size: int = MIN_CLUSTER_SIZE,
-    top_n: int = DEFAULT_TOP_N,
-) -> list[ThesisCluster]:
-    """Return top N implicit-thesis clusters.
+class ImplicitThesisVerb(VerbBase):
+    """Implicit Thesis verb implementation.
 
-    A cluster qualifies when:
-      - ≥ `min_cluster_size` notes (default 3) all share pairwise cosine ≥ `min_sim`
-        with at least one other cluster member (i.e., the cluster is a connected
-        component in the similarity graph)
-      - All members meet word-count and hub-density floors
-      - The cluster spans ≥ 2 distinct top-level folders OR ≥ 30 days time-span
-        (single-folder small-time clusters are usually within-doc structure, not
-        a true through-line)
+    Finds clusters of 3+ notes that converge on a single through-line the user has never named.
     """
-    rows = conn.execute(
+
+    @property
+    def name(self) -> str:
+        return "implicit-thesis"
+
+    def _threshold(self) -> dict:
+        """Return threshold parameters for implicit thesis."""
+        return {
+            "min_sim": DEFAULT_MIN_SIM,
+            "min_cluster_size": MIN_CLUSTER_SIZE,
+            "min_word_count": MIN_WORD_COUNT,
+            "max_clusters_probed": MAX_CLUSTERS_PROBED,
+            "max_cluster_size": MAX_CLUSTER_SIZE,
+        }
+
+    def _candidates(self) -> list[dict]:
+        """Return all notes with embeddings as potential candidates."""
+        rows = self.conn.execute(
+            """
+            SELECT n.id, n.rel_path, n.title, n.created, n.updated,
+                   n.word_count, n.content, e.vec
+            FROM notes n
+            JOIN embeddings e ON e.note_id = n.id
+            WHERE n.word_count >= ?
+            """,
+            (MIN_WORD_COUNT,),
+        ).fetchall()
+
+        out_link_counts = dict(self.conn.execute(
+            "SELECT from_note_id, COUNT(DISTINCT target) FROM links GROUP BY from_note_id"
+        ).fetchall())
+
+        notes = []
+        for r in rows:
+            nid = r["id"]
+            notes.append({
+                "id": nid,
+                "rel_path": r["rel_path"],
+                "title": r["title"],
+                "created": r["created"],
+                "updated": r["updated"],
+                "word_count": r["word_count"],
+                "content": r["content"],
+                "vec": _blob_to_vec(r["vec"]) if r["vec"] else None,
+                "out_links": out_link_counts.get(nid, 0),
+            })
+        return notes
+
+    def _filter(self, candidate: dict, thresholds: dict) -> bool:
+        """Filter out hub notes (MOCs/indexes)."""
+        density = _hub_density(candidate["out_links"], candidate["word_count"])
+        return density <= HUB_DENSITY_HARD
+
+    def _score(self, candidate: dict, cluster_members: list[int], sims: np.ndarray, id_to_idx: dict) -> float:
+        """Score a cluster based on size, diversity, span, and similarity."""
+        # This is called differently for thesis clusters - scoring happens at cluster level
+        return 0.0
+
+    def _quote(self, candidate: dict) -> tuple[str, str]:
+        """Extract load-bearing quote from candidate."""
+        return _extract_claim_quote(candidate["content"])
+
+    def _build_finding(self, cluster_data: dict, thresholds: dict) -> ThesisCluster:
+        """Build ThesisCluster from cluster data."""
+        return ThesisCluster(**cluster_data)
+
+    def run(self, top_n: int = DEFAULT_TOP_N, min_sim: float | None = None, min_cluster_size: int | None = None) -> VerbResult[ThesisCluster]:
+        """Execute the Implicit Thesis verb.
+
+        Args:
+            top_n: Number of thesis clusters to return
+            min_sim: Override default similarity threshold
+            min_cluster_size: Override default minimum cluster size
         """
-        SELECT n.id, n.rel_path, n.title, n.created, n.updated,
-               n.word_count, n.content,
-               e.vec
-        FROM notes n
-        JOIN embeddings e ON e.note_id = n.id
-        WHERE n.word_count >= ?
-        """,
-        (MIN_WORD_COUNT,),
-    ).fetchall()
-    if len(rows) < min_cluster_size:
-        return []
+        thresholds = self._threshold()
+        if min_sim is not None:
+            thresholds["min_sim"] = min_sim
+        if min_cluster_size is not None:
+            thresholds["min_cluster_size"] = min_cluster_size
 
-    # Hub-density filter: drop MOCs from the candidate pool entirely.
-    out_link_counts = dict(conn.execute(
-        "SELECT from_note_id, COUNT(DISTINCT target) FROM links GROUP BY from_note_id"
-    ).fetchall())
+        min_sim = thresholds["min_sim"]
+        min_cluster_size = thresholds["min_cluster_size"]
 
-    note_ids = [r["id"] for r in rows]
-    paths    = {r["id"]: r["rel_path"] for r in rows}
-    titles   = {r["id"]: r["title"]    for r in rows}
-    contents = {r["id"]: r["content"]  for r in rows}
-    wcs      = {r["id"]: r["word_count"] for r in rows}
-    created  = {r["id"]: r["created"]  for r in rows}
-    updated  = {r["id"]: r["updated"]  for r in rows}
-    densities = {nid: _hub_density(out_link_counts.get(nid, 0), wcs[nid]) for nid in note_ids}
-    keep_ids = [nid for nid in note_ids if densities[nid] <= HUB_DENSITY_HARD]
-    if len(keep_ids) < min_cluster_size:
-        return []
+        # Get candidates
+        notes = self._candidates()
+        if len(notes) < min_cluster_size:
+            return VerbResult(verb=self.name, findings=[], thresholds=thresholds, vault_age_days=self._vault_age())
 
-    # Build pairwise similarity matrix
-    id_to_idx = {nid: i for i, nid in enumerate(keep_ids)}
-    matrix = np.stack([_blob_to_vec(rows[note_ids.index(nid)]["vec"]) for nid in keep_ids])
-    sims = matrix @ matrix.T
-    np.fill_diagonal(sims, -1.0)
+        # Filter by hub density
+        keep_notes = [n for n in notes if self._filter(n, thresholds)]
+        if len(keep_notes) < min_cluster_size:
+            return VerbResult(verb=self.name, findings=[], thresholds=thresholds, vault_age_days=self._vault_age())
 
-    # Tight-neighborhood clusters (near-cliques) instead of connected
-    # components. Each cluster is a set where EVERY pair is above threshold,
-    # not just transitively connected — the right primitive when the vault
-    # graph is dense enough to collapse into one giant CC.
-    raw_clusters = _tight_neighborhoods(
-        sims, min_sim, min_size=min_cluster_size, max_size=MAX_CLUSTER_SIZE,
-    )
-    if not raw_clusters:
-        return []
+        # Build similarity matrix
+        keep_ids = [n["id"] for n in keep_notes]
+        id_to_idx = {nid: i for i, nid in enumerate(keep_ids)}
+        matrix = np.stack([n["vec"] for n in keep_notes])
+        sims = matrix @ matrix.T
+        np.fill_diagonal(sims, -1.0)
 
-    # For each tight neighborhood: find centroid (highest mean intra-cluster sim),
-    # extract load-bearing quotes, score, filter on diversity / time span.
-    clusters: list[ThesisCluster] = []
-    for _greedy_centroid_idx, idx_list in raw_clusters[:MAX_CLUSTERS_PROBED]:
+        # Find tight neighborhoods
+        raw_clusters = _tight_neighborhoods(
+            sims, min_sim, min_size=min_cluster_size, max_size=MAX_CLUSTER_SIZE,
+        )
+        if not raw_clusters:
+            return VerbResult(verb=self.name, findings=[], thresholds=thresholds, vault_age_days=self._vault_age())
+
+        # Build thesis clusters
+        findings: list[ThesisCluster] = []
+        for _greedy_centroid_idx, idx_list in raw_clusters[:MAX_CLUSTERS_PROBED]:
+            cluster_data = self._build_cluster_data(
+                keep_notes, keep_ids, idx_list, sims, thresholds
+            )
+            if cluster_data is None:
+                continue
+            finding = ThesisCluster(**cluster_data)
+            findings.append(finding)
+
+        # Sort by score and return top_n
+        findings.sort(key=lambda c: -c.score)
+        return VerbResult(
+            verb=self.name,
+            findings=findings[:top_n],
+            thresholds=thresholds,
+            vault_age_days=self._vault_age(),
+        )
+
+    def _build_cluster_data(
+        self,
+        notes: list[dict],
+        keep_ids: list[int],
+        idx_list: list[int],
+        sims: np.ndarray,
+        thresholds: dict,
+    ) -> dict | None:
+        """Build cluster data dictionary from a tight neighborhood."""
         comp_list = [keep_ids[i] for i in idx_list]
-        sub_sims  = sims[np.ix_(idx_list, idx_list)]
-        # Centroid = highest mean similarity to other members. Use np.where to
-        # mask the diagonal (-1) when computing the mean.
+        sub_sims = sims[np.ix_(idx_list, idx_list)]
+
+        # Find centroid (highest mean intra-cluster similarity)
         valid_mask = sub_sims > -0.5
         mean_per_row = np.where(valid_mask, sub_sims, 0).sum(axis=1) / np.maximum(valid_mask.sum(axis=1), 1)
         centroid_local = int(np.argmax(mean_per_row))
         centroid_id = comp_list[centroid_local]
 
-        # Mean intra-cluster similarity — for ranking and reporting
-        # Sum of the upper triangle, divided by number of pairs.
+        # Mean intra-cluster similarity
         if len(comp_list) >= 2:
             upper = sub_sims[np.triu_indices(len(comp_list), k=1)]
             upper_valid = upper[upper > -0.5]
@@ -242,70 +318,80 @@ def find_implicit_theses(
         else:
             cluster_sim = 0.0
 
+        # Build note lookup
+        notes_by_id = {n["id"]: n for n in notes}
+
         # Folder diversity + time span
-        folders = [_top_folder(paths[nid]) for nid in comp_list]
+        folders = [_top_folder(notes_by_id[nid]["rel_path"]) for nid in comp_list]
         folder_diversity = len({f for f in folders if f})
+
         try:
-            from datetime import date
             dates = []
             for nid in comp_list:
-                c = created[nid]
-                u = updated[nid]
-                if c:
-                    dates.append(date.fromisoformat(c[:10]))
-                if u:
-                    dates.append(date.fromisoformat(u[:10]))
+                n = notes_by_id[nid]
+                if n["created"]:
+                    dates.append(date.fromisoformat(n["created"][:10]))
+                if n["updated"]:
+                    dates.append(date.fromisoformat(n["updated"][:10]))
             span_days = (max(dates) - min(dates)).days if len(dates) >= 2 else 0
         except (ValueError, TypeError):
             span_days = 0
 
-        # Diversity gate: at least 2 folders OR a 30-day time span.
-        # Single-folder same-week clusters are usually one project's internal
-        # structure, not an unnamed through-line.
+        # Diversity gate
         if folder_diversity < 2 and span_days < 30:
-            continue
+            return None
 
-        # Quote extraction per member — surface each as a "rephrasing"
+        # Quote extraction per member
         member_quotes: list[str] = []
         member_provs: list[str] = []
         for nid in comp_list:
-            q, prov = _extract_claim_quote(contents[nid])
+            q, prov = self._quote(notes_by_id[nid])
             member_quotes.append(q or "")
             member_provs.append(prov)
-        # If centroid quote is empty, the cluster has nothing to display.
+
+        # Centroid quote must exist
         centroid_quote_idx = comp_list.index(centroid_id)
         if not member_quotes[centroid_quote_idx]:
-            continue
+            return None
 
-        # Score: cluster_size × diversity × log(span+1) × mean_sim × hub-penalty mean
-        from math import log
-        sim_factor    = cluster_sim
-        size_factor   = len(comp_list)
+        # Score computation
+        sim_factor = cluster_sim
+        size_factor = len(comp_list)
         diversity_fac = folder_diversity if folder_diversity >= 2 else 1.0
-        span_factor   = log(span_days + 1) if span_days > 0 else 1.0
-        hub_pen_mean  = float(np.mean([_hub_penalty(densities[nid]) for nid in comp_list]))
+        span_factor = log(span_days + 1) if span_days > 0 else 1.0
+        densities = {_hub_density(notes_by_id[nid]["out_links"], notes_by_id[nid]["word_count"]) for nid in comp_list}
+        hub_pen_mean = float(np.mean([_hub_penalty(d) for d in densities]))
         score = sim_factor * size_factor * diversity_fac * span_factor * hub_pen_mean
 
-        clusters.append(ThesisCluster(
-            centroid_id=centroid_id,
-            centroid_path=paths[centroid_id],
-            centroid_title=titles[centroid_id],
-            centroid_quote=member_quotes[centroid_quote_idx],
-            centroid_quote_provenance=member_provs[centroid_quote_idx],
-            member_ids=comp_list,
-            member_paths=[paths[nid] for nid in comp_list],
-            member_titles=[titles[nid] for nid in comp_list],
-            member_quotes=member_quotes,
-            member_quote_provenances=member_provs,
-            member_folders=folders,
-            cluster_size=len(comp_list),
-            folder_diversity=folder_diversity,
-            span_days=span_days,
-            mean_similarity=cluster_sim,
-            score=score,
-        ))
+        return {
+            "centroid_id": centroid_id,
+            "centroid_path": notes_by_id[centroid_id]["rel_path"],
+            "centroid_title": notes_by_id[centroid_id]["title"],
+            "centroid_quote": member_quotes[centroid_quote_idx],
+            "centroid_quote_provenance": member_provs[centroid_quote_idx],
+            "member_ids": comp_list,
+            "member_paths": [notes_by_id[nid]["rel_path"] for nid in comp_list],
+            "member_titles": [notes_by_id[nid]["title"] for nid in comp_list],
+            "member_quotes": member_quotes,
+            "member_quote_provenances": member_provs,
+            "member_folders": folders,
+            "cluster_size": len(comp_list),
+            "folder_diversity": folder_diversity,
+            "span_days": span_days,
+            "mean_similarity": cluster_sim,
+            "score": score,
+        }
 
-    if not clusters:
-        return []
-    clusters.sort(key=lambda c: -c.score)
-    return clusters[:top_n]
+
+# ── Backwards-compatible wrappers ─────────────────────────────────
+
+def find_implicit_theses(
+    conn: sqlite3.Connection,
+    min_sim: float = DEFAULT_MIN_SIM,
+    min_cluster_size: int = MIN_CLUSTER_SIZE,
+    top_n: int = DEFAULT_TOP_N,
+) -> list[ThesisCluster]:
+    """Run the Implicit Thesis verb. Returns top N thesis clusters."""
+    verb = ImplicitThesisVerb(conn)
+    result = verb.run(top_n=top_n, min_sim=min_sim, min_cluster_size=min_cluster_size)
+    return result.findings
