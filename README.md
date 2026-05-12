@@ -74,7 +74,17 @@ Try the demo (no vault required — uses a sample vault bundled with the repo):
 basalt demo
 ```
 
-Or point at your own vault:
+Or set up your own vault. The interactive wizard handles it in ~10 seconds:
+
+```bash
+basalt init           # interactive: vault path, ollama URL, embed model
+basalt index          # walk vault, embed every note (~1-3 min for 2k notes)
+basalt brief --section all
+```
+
+On a first interactive `basalt init`, the wizard renders a sample Brief from the bundled vault right after "Set." — so you see what Basalt does before you've indexed a single note of your own.
+
+If you'd rather skip the wizard, the env-var path still works:
 
 ```bash
 basalt index --vault ~/path/to/your-vault
@@ -82,6 +92,10 @@ basalt brief --section all
 ```
 
 > **Building from source:** `git clone https://github.com/virtexvirtuoso/basalt.git && cd basalt && pip install -e .`
+
+### Obsidian plugin
+
+Want Basalt inside Obsidian? The companion plugin lives at [`virtexvirtuoso/basalt-obsidian-plugin`](https://github.com/virtexvirtuoso/basalt-obsidian-plugin). It spawns `basalt-mcp` and renders findings as a native Obsidian modal with clickable wikilinks. Manual install for now (Community Plugins submission pending). See its README for setup + the macOS GUI PATH gotcha.
 
 ## Verbs shipped (4/4 site-advertised + 1 bonus)
 
@@ -105,6 +119,9 @@ basalt brief --section all
 
 | Command | What it does |
 |---------|--------------|
+| `basalt init` | Interactive first-run wizard — vault, Ollama URL, embed model. Writes `~/.config/basalt/config.toml`. Renders a sample Brief on first interactive run |
+| `basalt config show` | Print resolved config with `(env)` / `(file)` / `(default)` source indicators |
+| `basalt doctor` | 5-row health check — config, vault, ollama, model, index. Exits 1 if anything red |
 | `basalt demo` | Index the bundled sample vault and run a brief — no setup, no vault needed |
 | `basalt index --vault PATH` | Walk vault, parse frontmatter, build link graph, embed every note |
 | `basalt brief` | Surface the strongest buried insight (default top 1) |
