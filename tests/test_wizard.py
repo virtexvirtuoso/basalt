@@ -199,3 +199,51 @@ def test_valid_url_helper():
     assert not wizard._valid_url("localhost:11434")
     assert not wizard._valid_url("//example.com")
     assert not wizard._valid_url("")
+
+
+# ── Sample-preview behaviors (wizard payoff) ───────────────────
+
+
+def test_packaged_demo_db_returns_at_least_one_insight():
+    """The wheel-shipped demo.db must load and surface ≥1 buried insight,
+    or the wizard's preview will silently fall back forever."""
+    from importlib.resources import files
+    from basalt.index import open_db
+    from basalt.buried import find_buried_insights
+
+    db_path = files("basalt.data") / "demo.db"
+    conn = open_db(db_path)
+    try:
+        results = find_buried_insights(conn, vault_aware=True, top_n=1)
+    finally:
+        conn.close()
+    assert len(results) >= 1
+    assert results[0].quote.strip(), "top result has empty quote"
+
+
+def test_render_sample_preview_writes_buried_insight_block(capsys):
+    """The wizard's preview helper renders the buried-insight header to stdout."""
+    from rich.console import Console
+    from basalt.wizard import _render_sample_preview
+
+    console = Console(force_terminal=True, width=120)
+    _render_sample_preview(console)
+    out = capsys.readouterr().out
+    assert "THE BURIED INSIGHT" in out
+
+
+def test_render_sample_preview_falls_back_gracefully_when_db_missing(capsys, monkeypatch):
+    """If the packaged DB can't be resolved or opened, the preview emits a
+    quiet fallback line — never raises, never leaks an exception."""
+    from rich.console import Console
+    from basalt import wizard
+
+    def boom(*a, **kw):
+        raise FileNotFoundError("simulated missing demo.db")
+    monkeypatch.setattr(wizard, "_packaged_demo_db_path", boom)
+
+    console = Console(force_terminal=True, width=120)
+    wizard._render_sample_preview(console)
+    out = capsys.readouterr().out
+    assert "sample preview unavailable" in out
+    assert "Traceback" not in out

@@ -199,6 +199,46 @@ def _valid_url(url: str) -> bool:
     return url.startswith(("http://", "https://"))
 
 
+# ── Sample preview (wizard payoff) ──────────────────────────────
+
+def _packaged_demo_db_path():
+    """Return the path to the wheel-shipped demo.db. Raises if not packaged."""
+    from importlib.resources import files
+    return files("basalt.data") / "demo.db"
+
+
+VERB_ROSTER = ("Buried Insight", "Connection", "Contradiction", "Implicit Thesis", "Drift")
+
+
+def _render_verb_roster(console: Console) -> None:
+    """Print the five-verb roster line below the sample preview."""
+    console.print()
+    console.print("  [dim]Five verbs in all:[/]")
+    console.print(f"    [#EFE9E2]{' · '.join(VERB_ROSTER)}[/]")
+    console.print("    [dim]On your vault, all five run with[/]  [bold #EFE9E2]basalt brief --section all[/]")
+
+
+def _render_sample_preview(console: Console) -> None:
+    """Render a one-section sample Brief from the wheel-shipped demo.db.
+
+    Called from run_wizard after a first-run interactive write. Suppressed by
+    the caller in non-interactive / non-first-run paths. Catches every error
+    locally — the wizard must never fail because of preview issues.
+    """
+    console.print()
+    console.print("  [dim]─── a Brief looks like this ───[/] [dim](on the bundled sample, 24 notes)[/]")
+    try:
+        from basalt.cli import render_buried_from_db
+        db_path = _packaged_demo_db_path()
+        ok = render_buried_from_db(db_path, console=console)
+    except Exception:
+        ok = False
+    if not ok:
+        console.print("  [dim](sample preview unavailable — run `basalt demo` to see one.)[/]")
+        return
+    _render_verb_roster(console)
+
+
 # ── Wizard flow ─────────────────────────────────────────────────
 
 class WizardAborted(Exception):
