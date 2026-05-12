@@ -239,6 +239,18 @@ for the full posture, and [SECURITY.md](SECURITY.md) for the threat model.
 Open an issue first for anything non-trivial. Follow the existing module shape
 — small, named, single-purpose.
 
+### Regenerating the sample preview
+
+The wizard's first-run preview reads from `src/basalt/data/demo.db`, which is
+committed to the repo. If you edit `examples/sample-vault/` or change the
+embedding model, regenerate it:
+
+```bash
+python scripts/build_demo_db.py
+```
+
+Requires Ollama running with `nomic-embed-text` pulled.
+
 ## License
 
 [MIT](LICENSE) — Fernando Villar / Virtuoso Crypto, 2026.
