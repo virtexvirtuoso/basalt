@@ -95,7 +95,7 @@ basalt brief --section all
 
 ### Obsidian plugin
 
-Want Basalt inside Obsidian? The companion plugin lives at [`virtexvirtuoso/basalt-obsidian-plugin`](https://github.com/virtexvirtuoso/basalt-obsidian-plugin). It spawns `basalt-mcp` and renders findings as a native Obsidian modal with clickable wikilinks. Manual install for now (Community Plugins submission pending). See its README for setup + the macOS GUI PATH gotcha.
+Want Basalt inside Obsidian? The companion plugin lives in [`./obsidian/`](./obsidian/). It spawns `basalt-mcp` and renders findings as a native Obsidian modal with clickable wikilinks. Manual install for now (Community Plugins submission pending). See [`obsidian/README.md`](./obsidian/README.md) for setup + the macOS GUI PATH gotcha.
 
 ## Verbs shipped (4/4 site-advertised + 1 bonus)
 

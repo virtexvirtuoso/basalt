@@ -1,0 +1,11 @@
+{
+  "id": "basalt",
+  "name": "Basalt",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Reads your vault and surfaces what you believe but never wrote down. Bridges to the local basalt-mcp server (no Claude Code, no cloud, no writes).",
+  "author": "Fernando Villar / Virtuoso Crypto",
+  "authorUrl": "https://virtuosoai.dev/basalt/",
+  "fundingUrl": "https://github.com/virtexvirtuoso/basalt",
+  "isDesktopOnly": true
+}

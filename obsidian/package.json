@@ -1,0 +1,30 @@
+{
+  "name": "basalt-obsidian-plugin",
+  "version": "0.1.0",
+  "description": "Obsidian plugin for Basalt — reads your vault and surfaces what you believe but never wrote down. MCP bridge to the local basalt-mcp server.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "tsc -noEmit -skipLibCheck"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "basalt",
+    "knowledge-management",
+    "mcp"
+  ],
+  "author": "Fernando Villar / Virtuoso Crypto",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "latest",
+    "tslib": "^2.6.0",
+    "typescript": "^5.4.0"
+  }
+}

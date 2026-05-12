@@ -1,0 +1,88 @@
+/* Basalt Obsidian plugin — minimal v0.1 styling. */
+
+.basalt-brief-modal h2 {
+  margin-bottom: 0.4em;
+}
+
+.basalt-brief-modal h3 {
+  margin-top: 1.2em;
+  margin-bottom: 0.6em;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.2em;
+}
+
+.basalt-track-record {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  margin-bottom: 1em;
+}
+
+.basalt-track-record-counts {
+  margin-left: 0.5em;
+}
+
+.basalt-finding {
+  border-left: 3px solid var(--text-accent);
+  padding: 0.5em 0.75em;
+  margin: 0.75em 0;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.basalt-finding blockquote {
+  margin: 0.4em 0;
+  font-style: italic;
+  border-left: 2px solid var(--text-muted);
+  padding-left: 0.6em;
+}
+
+.basalt-path {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.basalt-path:hover {
+  text-decoration: underline;
+}
+
+.basalt-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin: 0.2em 0;
+}
+
+.basalt-pair-side {
+  margin: 0.4em 0;
+  padding-left: 0.5em;
+  border-left: 1px dashed var(--background-modifier-border);
+}
+
+.basalt-falsification {
+  margin-top: 0.6em;
+  padding: 0.4em 0.6em;
+  background: var(--background-primary-alt);
+  border-radius: 3px;
+  font-size: var(--font-ui-smaller);
+}
+
+.basalt-falsification strong {
+  color: var(--text-warning);
+}
+
+.basalt-falsification ul {
+  margin: 0.2em 0 0.2em 1em;
+  padding: 0;
+}
+
+.basalt-falsification li {
+  margin: 0.15em 0;
+  color: var(--text-muted);
+}
+
+.basalt-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
