@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.text import Text
 
 from basalt.vault import walk_vault
@@ -36,6 +38,7 @@ from basalt.serialize import (
     track_record_to_dict,
     with_falsification,
 )
+from basalt.wizard import run_wizard, WizardAborted, CONFIG_PATH
 
 
 # Detect non-interactive stdout — strip Rich color codes when piped.
@@ -138,14 +141,116 @@ SECTIONS_SHIPPED   = ["buried-insight", "connection", "contradiction", "implicit
 SECTIONS_PLANNED: dict[str, str] = {}
 
 
+# ── Runtime config resolution ───────────────────────────────────
+# Precedence: CLI flag > env var > config file > hardcoded default.
+# Honors the contract that `basalt init` is not theater — its writes are read.
+
+def _runtime_defaults() -> dict:
+    """Resolve the effective defaults for vault, db, ollama_url, embed_model.
+    Loads ~/.config/basalt/config.toml if present. Env vars override config.
+    Warnings about partial config are surfaced via console.print()."""
+    from basalt import wizard
+    cfg = wizard.load_config(
+        on_warning=lambda key: console.print(
+            f"  [yellow]·[/yellow] [dim]config is missing `{key}` — using default[/dim]"
+        ),
+    )
+    return {
+        "vault": (
+            Path(os.environ["BASALT_VAULT"]).expanduser()
+            if os.environ.get("BASALT_VAULT")
+            else (cfg.vault_path if cfg else DEFAULT_VAULT)
+        ),
+        "ollama_url": (
+            os.environ.get("BASALT_OLLAMA_URL")
+            or (cfg.ollama_url if cfg else wizard.DEFAULT_OLLAMA_URL)
+        ),
+        "embed_model": (
+            os.environ.get("BASALT_EMBED_MODEL")
+            or (cfg.embed_model if cfg else wizard.DEFAULT_EMBED_MODEL)
+        ),
+    }
+
+
+def _require_initialized(db: Path) -> None:
+    """Cold-path guard for read-only commands. If neither config nor DB exists,
+    print one helpful line and exit 2 instead of letting Typer surface a stack."""
+    if db.exists():
+        return
+    from basalt import wizard
+    if wizard.load_config() is not None:
+        # Config exists but DB doesn't — user ran init, hasn't indexed yet.
+        console.print(
+            f"[dim]no index yet at[/] [bold]{db}[/] [dim]— run[/] [bold]basalt index[/]"
+        )
+    else:
+        # Neither exists. First-run cold path.
+        console.print(
+            f"[dim]no config found — run[/] [bold]basalt init[/] [dim](or[/] [bold]basalt init --index[/][dim])[/]"
+        )
+    raise typer.Exit(code=2)
+
+
+@app.command("init")
+def cmd_init(
+    yes: bool = typer.Option(
+        False, "--yes", "-y",
+        help="Accept all defaults non-interactively. Honors BASALT_VAULT / BASALT_OLLAMA_URL / BASALT_EMBED_MODEL env vars.",
+    ),
+    no_input: bool = typer.Option(
+        False, "--no-input",
+        help="Fail rather than prompt. Useful in CI; requires BASALT_VAULT (or existing config) to be set.",
+    ),
+    index_now: bool = typer.Option(
+        False, "--index",
+        help="Run `basalt index` immediately after writing the config.",
+    ),
+):
+    """Interactive first-run setup. Writes ~/.config/basalt/config.toml."""
+    _print_banner()
+    try:
+        cfg = run_wizard(yes=yes, no_input=no_input, console=console)
+    except WizardAborted as e:
+        reason = str(e)
+        console.print()
+        if reason in ("interrupted", "declined"):
+            console.print(
+                "  [dim]Stopped. Nothing written. Run[/] [bold]basalt init[/] [dim]when you're ready.[/]"
+            )
+        else:
+            # Real error (bad vault path, too many invalid answers, etc.) — surface the reason.
+            console.print(f"  [red]·[/red] [dim]{reason}[/]")
+        raise typer.Exit(code=1)
+
+    if index_now:
+        console.print()
+        cmd_index(
+            vault=cfg.vault_path,
+            db=DEFAULT_DB,
+            skip_embed=False,
+            embed_model=cfg.embed_model,
+            ollama_url=cfg.ollama_url,
+        )
+
+
 @app.command("index")
 def cmd_index(
-    vault: Path = typer.Option(DEFAULT_VAULT, "--vault", exists=True, file_okay=False, dir_okay=True),
+    vault: Path = typer.Option(None, "--vault", help="Vault path. Defaults to config or ~/virtuoso-vault."),
     db: Path = typer.Option(DEFAULT_DB, "--db"),
     skip_embed: bool = typer.Option(False, "--skip-embed", help="Skip Ollama embedding step."),
-    embed_model: str = typer.Option("nomic-embed-text", "--embed-model"),
+    embed_model: str = typer.Option(None, "--embed-model", help="Embedding model. Defaults to config."),
+    ollama_url: str = typer.Option(None, "--ollama-url", help="Ollama base URL. Defaults to config."),
 ):
     """Walk the vault, parse frontmatter, build link graph, embed."""
+    defaults = _runtime_defaults()
+    vault = (vault or defaults["vault"]).expanduser().absolute()
+    embed_model = embed_model or defaults["embed_model"]
+    ollama_url = ollama_url or defaults["ollama_url"]
+    if not vault.is_dir():
+        console.print(f"[red]✗[/red] Vault not found: [bold]{vault}[/bold]")
+        console.print(f"[dim]Run[/] [bold]basalt init[/] [dim]or pass[/] [bold]--vault[/]")
+        raise typer.Exit(code=2)
+
     t0 = time.time()
     conn = open_db(db)
     _maybe_first_run_greeting(conn)
@@ -168,11 +273,12 @@ def cmd_index(
     console.print(f"  [green]✓[/green] {n_notes} notes · {n_links} links · {resolved} resolved to targets · {time.time()-t0:.1f}s")
 
     if not skip_embed:
-        console.print(f"[dim]Embedding via Ollama[/dim] [bold]{embed_model}[/bold]…")
+        console.print(f"[dim]Embedding via Ollama[/dim] [bold]{embed_model}[/bold] [dim]at[/] [bold]{ollama_url}[/]…")
         t1 = time.time()
         computed, skipped = ensure_embeddings(
             conn, model=embed_model,
             on_progress=lambda msg: console.print(f"  [dim]{msg}[/dim]"),
+            ollama_url=ollama_url,
         )
         console.print(f"  [green]✓[/green] {computed} embedded · {skipped} cached · {time.time()-t1:.1f}s")
     conn.close()
@@ -180,7 +286,7 @@ def cmd_index(
 
 @app.command("brief")
 def cmd_brief(
-    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    db: Path = typer.Option(DEFAULT_DB, "--db"),
     section: str = typer.Option(
         "buried-insight", "--section",
         help=("Which Brief section to compute. One of: "
@@ -201,6 +307,7 @@ def cmd_brief(
     Connection, and Contradiction (v0 heuristic). Implicit Thesis and Drift
     are planned for Phase 1.
     """
+    _require_initialized(db)
     section_key = section.strip().lower()
     if section_key in SECTIONS_PLANNED:
         raise typer.BadParameter(
@@ -712,13 +819,14 @@ def _wrap(text: str, width: int) -> list[str]:
 
 @app.command("connection")
 def cmd_connection(
-    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    db: Path = typer.Option(DEFAULT_DB, "--db"),
     top: int = typer.Option(3, "--top", min=1, max=10),
     min_sim: float = typer.Option(CONN_MIN_SIM, "--min-sim", min=0.5, max=0.99),
     fmt: str = typer.Option("text", "--format", "-f",
                             help="Output format: 'text' or 'json'."),
 ):
     """Surface latent connections — same idea written in different folders, no wikilink between them."""
+    _require_initialized(db)
     conn = open_db(db)
     pairs = find_connections(conn, top_n=top, min_sim=min_sim)
     conn.close()
@@ -739,7 +847,7 @@ def cmd_connection(
 
 @app.command("audit")
 def cmd_audit(
-    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    db: Path = typer.Option(DEFAULT_DB, "--db"),
     days: int = typer.Option(90, "--days", min=7, max=730,
                              help="Track-record window in days (default 90)."),
     fmt: str = typer.Option("text", "--format", "-f",
@@ -754,6 +862,7 @@ def cmd_audit(
     This is the single feature that converts Basalt from "AI summary tool"
     into "research log." Run it weekly — your track record compounds.
     """
+    _require_initialized(db)
     conn = open_db(db)
     try:
         results = audit_pending(conn)
@@ -819,12 +928,13 @@ def cmd_audit(
 
 @app.command("drift")
 def cmd_drift(
-    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    db: Path = typer.Option(DEFAULT_DB, "--db"),
     days: int = typer.Option(DRIFT_WINDOW_DAYS, "--days", min=7, max=365,
                              help="Window for daily-note mentions (default 30)."),
     fmt: str = typer.Option("text", "--format", "-f", help="Output format: 'text' or 'json'."),
 ):
     """Surface drift — projects whose lived priority (daily-note mentions) diverges from stated priority (project-folder structure)."""
+    _require_initialized(db)
     conn = open_db(db)
     drifts = find_drift(conn, window_days=days, top_n=1)
     if fmt.strip().lower() == "json":
@@ -853,12 +963,13 @@ def cmd_drift(
 
 @app.command("thesis")
 def cmd_thesis(
-    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    db: Path = typer.Option(DEFAULT_DB, "--db"),
     top: int = typer.Option(3, "--top", min=1, max=10),
     min_sim: float = typer.Option(THESIS_MIN_SIM, "--min-sim", min=0.5, max=0.99),
     fmt: str = typer.Option("text", "--format", "-f", help="Output format: 'text' or 'json'."),
 ):
     """Surface implicit theses — clusters of notes that converge on an unnamed through-line (v0 cluster heuristic)."""
+    _require_initialized(db)
     conn = open_db(db)
     clusters = find_implicit_theses(conn, top_n=top, min_sim=min_sim)
     if fmt.strip().lower() == "json":
@@ -887,13 +998,14 @@ def cmd_thesis(
 
 @app.command("contradiction")
 def cmd_contradiction(
-    db: Path = typer.Option(DEFAULT_DB, "--db", exists=True),
+    db: Path = typer.Option(DEFAULT_DB, "--db"),
     top: int = typer.Option(3, "--top", min=1, max=10),
     min_sim: float = typer.Option(CONT_MIN_SIM, "--min-sim", min=0.5, max=0.99),
     fmt: str = typer.Option("text", "--format", "-f",
                             help="Output format: 'text' or 'json'."),
 ):
     """Surface candidate contradictions — pairs of same-topic notes with opposing surface markers (v0 heuristic)."""
+    _require_initialized(db)
     conn = open_db(db)
     pairs = find_contradictions(conn, top_n=top, min_sim=min_sim)
     conn.close()
@@ -911,6 +1023,75 @@ def cmd_contradiction(
                        "v0 is heuristic — surface text needs explicit reversal/negation markers.")
         raise typer.Exit(code=1)
     _render_contradictions(pairs)
+
+
+@app.command("config")
+def cmd_config(
+    action: str = typer.Argument("show", help="show: print resolved config. path: print config file location."),
+):
+    """Inspect resolved Basalt config (precedence: env > file > defaults)."""
+    from basalt import wizard
+    if action == "path":
+        sys.stdout.write(str(wizard.CONFIG_PATH) + "\n")
+        return
+    if action != "show":
+        console.print(f"[red]✗[/red] unknown action '{action}' — try [bold]show[/bold] or [bold]path[/bold]")
+        raise typer.Exit(code=2)
+
+    cfg = wizard.load_config()
+    defaults = _runtime_defaults()
+    has_file = cfg is not None
+
+    from rich.table import Table as RTable
+    t = RTable.grid(padding=(0, 2))
+    t.add_column(style="dim")
+    t.add_column()
+    t.add_column(style="dim")
+    t.add_row("vault",   str(defaults["vault"]),       "(env)" if os.environ.get("BASALT_VAULT") else ("(file)" if has_file else "(default)"))
+    t.add_row("ollama",  defaults["ollama_url"],        "(env)" if os.environ.get("BASALT_OLLAMA_URL") else ("(file)" if has_file else "(default)"))
+    t.add_row("model",   defaults["embed_model"],       "(env)" if os.environ.get("BASALT_EMBED_MODEL") else ("(file)" if has_file else "(default)"))
+    t.add_row("config",  str(wizard.CONFIG_PATH),       "(present)" if has_file else "(none)")
+    t.add_row("db",      str(DEFAULT_DB),               "(present)" if DEFAULT_DB.exists() else "(not yet built)")
+    console.print()
+    console.print(Panel(t, title="[#D9824B]⬡[/] [bold]basalt config[/]", border_style="#5A5048", padding=(0, 2)))
+
+
+@app.command("doctor")
+def cmd_doctor():
+    """Quick health check — config, vault, ollama, db."""
+    from basalt import wizard
+    defaults = _runtime_defaults()
+    vault = defaults["vault"]
+    ollama_url = defaults["ollama_url"]
+    embed_model = defaults["embed_model"]
+
+    cfg = wizard.load_config()
+    reachable, installed = wizard.ollama_status(ollama_url)
+    vault_ok = vault.is_dir()
+    db_ok = DEFAULT_DB.exists()
+
+    def line(ok: bool, label: str, detail: str = "") -> str:
+        mark = "[green]✓[/green]" if ok else "[yellow]·[/yellow]"
+        body = f"  {mark} [#EFE9E2]{label}[/]"
+        if detail:
+            body += f" [dim]{detail}[/]"
+        return body
+
+    console.print()
+    console.print(line(cfg is not None, "config", f"{wizard.CONFIG_PATH}" if cfg else "missing — run `basalt init`"))
+    console.print(line(vault_ok, "vault", f"{vault}"))
+    console.print(line(reachable, "ollama", f"{ollama_url} · {len(installed)} models" if reachable else f"{ollama_url} (not answering)"))
+    if reachable:
+        model_ok = embed_model in installed
+        console.print(line(model_ok, "model", f"{embed_model}" + ("" if model_ok else f" — pull with: ollama pull {embed_model}")))
+    else:
+        console.print(line(False, "model", f"{embed_model} (can't check — ollama down)"))
+    console.print(line(db_ok, "index", f"{DEFAULT_DB}" if db_ok else "not built — run `basalt index`"))
+    console.print()
+
+    all_ok = (cfg is not None) and vault_ok and reachable and db_ok
+    if not all_ok:
+        raise typer.Exit(code=1)
 
 
 @app.command("demo")
