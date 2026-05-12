@@ -247,3 +247,47 @@ def test_render_sample_preview_falls_back_gracefully_when_db_missing(capsys, mon
     out = capsys.readouterr().out
     assert "sample preview unavailable" in out
     assert "Traceback" not in out
+
+
+def test_wizard_does_not_render_preview_when_yes_flag(tmp_path, monkeypatch, capsys):
+    """--yes with no existing config writes the file but does NOT render the
+    preview — that's an interactive-only beat."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    cfg_path = fake_home / ".config" / "basalt" / "config.toml"
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setattr(wizard, "CONFIG_PATH", cfg_path)
+    monkeypatch.setenv("BASALT_VAULT", str(vault))
+    monkeypatch.delenv("BASALT_OLLAMA_URL", raising=False)
+    monkeypatch.delenv("BASALT_EMBED_MODEL", raising=False)
+
+    run_wizard(yes=True)
+    out = capsys.readouterr().out
+    assert "THE BURIED INSIGHT" not in out
+    assert "a Brief looks like this" not in out
+
+
+def test_wizard_does_not_render_preview_when_existing_config(tmp_path, monkeypatch, capsys):
+    """If an existing config is present, the user has already done the wizard.
+    No preview on reconfigure."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    cfg_path = fake_home / ".config" / "basalt" / "config.toml"
+    cfg_path.parent.mkdir(parents=True)
+
+    original = Config(vault_path=vault, ollama_url="http://localhost:11434", embed_model="nomic-embed-text")
+    write_config(original, cfg_path)
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setattr(wizard, "CONFIG_PATH", cfg_path)
+    monkeypatch.delenv("BASALT_VAULT", raising=False)
+    monkeypatch.delenv("BASALT_OLLAMA_URL", raising=False)
+    monkeypatch.delenv("BASALT_EMBED_MODEL", raising=False)
+
+    run_wizard(yes=True)
+    out = capsys.readouterr().out
+    assert "THE BURIED INSIGHT" not in out

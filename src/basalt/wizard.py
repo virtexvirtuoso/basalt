@@ -446,5 +446,12 @@ def run_wizard(*, yes: bool = False, no_input: bool = False, console: Console | 
     written = write_config(cfg)
     console.print()
     console.print(f"  [#D9824B]⬡[/]  [#EFE9E2]Set.[/] [dim]{written}[/]")
+
+    # First-run payoff: render a sample Brief from the bundled vault. Gated to
+    # interactive + first-run only — see spec for rationale.
+    if existing is None:
+        _render_sample_preview(console)
+
+    console.print()
     console.print(f"  [dim]Next, build the index:[/] [bold #EFE9E2]basalt index[/]")
     return cfg
