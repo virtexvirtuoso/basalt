@@ -6,13 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.15] — 2026-05-12
+
+### Added — `basalt init` wizard + first-run sample preview
+
+- **`basalt init`** — interactive first-run setup wizard (Typer + Questionary + Rich). Writes `~/.config/basalt/config.toml`. Honors `--yes` / `--no-input` / `BASALT_VAULT` / `BASALT_OLLAMA_URL` / `BASALT_EMBED_MODEL` / `NO_COLOR`. Idempotent: existing-config detection + reconfigure prompt; `--yes` no-clobber when nothing changed; atomic write via temp+rename.
+- **First-run sample Brief preview** — on first interactive `basalt init`, after "Set." the wizard renders a one-section Buried Insight from a wheel-shipped `demo.db` plus a four-verb roster. Magic moment now lands inside the first run instead of waiting for `basalt index` against the user's vault. Gated to `interactive AND first-run only` — skipped on `--yes`, `--no-input`, reconfigure, and piped stdout.
+- **`basalt config show|path`** — resolved-config inspection with env / file / default source indicators.
+- **`basalt doctor`** — 5-row health check (config, vault, ollama, model, index). Exits 1 if anything red.
+- **`scripts/build_demo_db.py`** — release-time tool that regenerates `src/basalt/data/demo.db` from `examples/sample-vault/`. Requires Ollama running with `nomic-embed-text` pulled.
+
+### Changed
+- **`cmd_index`** — defaults now resolve from `_runtime_defaults()` (CLI flag > env > config > hardcoded). New `--ollama-url` flag plumbs through to `ensure_embeddings`. Drops the implicit `exists=True` Typer guard in favor of a friendlier `_require_initialized()` first-run nudge.
+- **Read-path commands** (`brief`, `connection`, `audit`, `drift`, `thesis`, `contradiction`) — drop `exists=True` on `--db` and use `_require_initialized()` instead. First-run users now see `no config found — run \`basalt init\`` (exit 2) instead of a Typer stack trace.
+- **Embed endpoint** — migrated from deprecated `/api/embeddings` to `/api/embed`. `ollama_url` is now a parameter on every helper, not a module constant.
+- **Wizard visual continuity** — Questionary `qmark` is now `⬡` in basalt orange; prompt text in warm bone; answers + pointers in basalt orange. The form lives inside the formation now.
+- **Vault detection** expanded — adds `~/Documents/Obsidian`, `~/Notes`, and enumerates iCloud Obsidian vaults under `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/`. Symlink-preserving (`.absolute()` instead of `.resolve()`).
+
+### Fixed
+- **Wheel packaging** — switched from `force-include` to `artifacts` directive for `demo.db` to eliminate the "Duplicate name" zip warning.
+
+### Engineering
+- **53 tests passing** (35 prior + 13 wizard regression + 5 sample-preview).
+- **New module:** `src/basalt/wizard.py` (~310 lines).
+- **New helper:** `render_buried_from_db(db_path, console=None) -> bool` in `cli.py` — refactor that wraps the existing find + render path with exception isolation. Used by both `cmd_brief` and the wizard preview.
+- **Partial config recovery** — `load_config()` returns a Config with missing keys filled from defaults instead of returning None. Vault-path-missing still returns None (caller must re-run init).
+
+### Planned (carried)
+- Stale verb — scoped + planned (`docs/superpowers/plans/2026-05-12-stale-verb.md`)
+- PyPI publish + MCP Registry submission — Trusted Publisher binding on pypi.org still pending
+- Implicit Thesis v1 / Contradiction v1 / Drift v1 — LLM synthesis pass
+- Obsidian plugin v0.2
+
 ## [0.0.14] — 2026-05-11
 
 ### Added
-— **PyPI distribution** — `pip install basalt-vault` and `pip install 'basalt-vault[mcp]'` now work. The package is published under `basalt-vault` (the name `basalt` was already taken on PyPI).
-— **MCP Registry submission** — the server is now discoverable via MCP client install flows (Claude Desktop, Cursor, Cline, Zed).
 — **`LLMProvider` interface** — code-enforced privacy boundary per [[Decision-Pro-Tier-BYO-Key-2026-05-11]]. Open tier bundles only `OllamaProvider` (localhost embeddings). Pro tier (`[pro]` extra) requires user-supplied API keys; stub providers raise `NotImplementedError` until installed.
 — **Provider tests** — 4 new tests guard the no-network promise (anthropic import check, OllamaProvider import, stub raises, MCP server AST scan).
+— **PyPI / MCP Registry groundwork** — `pyproject.toml` metadata complete; `.github/workflows/publish.yml` set up for OIDC publishing on tag. **NOT YET PUBLISHED** — Trusted Publisher binding on pypi.org still required before the first tag push will succeed.
 
 ### Changed
 — **README install instructions** — replaced "install from source" with the one-line PyPI install. Source-build footnote preserved.
