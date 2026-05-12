@@ -535,6 +535,33 @@ def _render_buried_body(r, index: int | None = None) -> None:
     console.print(Text("   ▸ Promote to thesis     ▸ Open all     ▸ Snooze", style="#D9824B"))
 
 
+def render_buried_from_db(db_path, *, console=None) -> bool:
+    """Open a Basalt DB, find the top buried insight, render it.
+
+    Used by both `basalt brief` and the wizard's first-run preview.
+    Returns True if a result was rendered, False if no insights were found
+    or the DB couldn't be opened. Never raises.
+    """
+    from basalt.index import open_db
+    try:
+        conn = open_db(db_path)
+    except Exception:
+        return False
+    try:
+        results = find_buried_insights(conn, vault_aware=True, top_n=1)
+        if not results:
+            return False
+        _render_buried_results(results)
+        return True
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 # ── Connection rendering ────────────────────────────────────────
 
 def _render_connections(pairs: list[ConnectionPair]) -> None:
