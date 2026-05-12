@@ -13,40 +13,44 @@ import numpy as np
 OLLAMA_URL = "http://localhost:11434"
 DEFAULT_MODEL = "nomic-embed-text"
 EMBED_MAX_CHARS = 4000     # truncate aggressively — speed > marginal quality
-EMBED_CONCURRENCY = 6      # Ollama batches GPU calls reasonably well at this width
+EMBED_CONCURRENCY = 6      # parallel single-input calls — empirically faster than batched on M1 / nomic-embed-text
 
 
-async def _embed_one_async(client: httpx.AsyncClient, model: str, text: str) -> np.ndarray:
+def _normalize(vec: np.ndarray) -> np.ndarray:
+    n = np.linalg.norm(vec)
+    return vec / n if n > 0 else vec
+
+
+async def _embed_one_async(
+    client: httpx.AsyncClient, model: str, text: str, ollama_url: str = OLLAMA_URL
+) -> np.ndarray:
+    """Embed one text asynchronously."""
     if len(text) > EMBED_MAX_CHARS:
         text = text[:EMBED_MAX_CHARS]
     r = await client.post(
-        f"{OLLAMA_URL}/api/embeddings",
-        json={"model": model, "prompt": text},
+        f"{ollama_url.rstrip('/')}/api/embed",
+        json={"model": model, "input": text},
         timeout=60.0,
     )
     r.raise_for_status()
-    vec = np.asarray(r.json()["embedding"], dtype=np.float32)
-    n = np.linalg.norm(vec)
-    if n > 0:
-        vec = vec / n
-    return vec
+    payload = r.json()
+    raw = payload["embeddings"][0] if "embeddings" in payload else payload["embedding"]
+    return _normalize(np.asarray(raw, dtype=np.float32))
 
 
-def _embed_one(client: httpx.Client, model: str, text: str) -> np.ndarray:
+def _embed_one(client: httpx.Client, model: str, text: str, ollama_url: str = OLLAMA_URL) -> np.ndarray:
     """Sync fallback. Returns float32 numpy array."""
     if len(text) > EMBED_MAX_CHARS:
         text = text[:EMBED_MAX_CHARS]
     r = client.post(
-        f"{OLLAMA_URL}/api/embeddings",
-        json={"model": model, "prompt": text},
+        f"{ollama_url.rstrip('/')}/api/embed",
+        json={"model": model, "input": text},
         timeout=60.0,
     )
     r.raise_for_status()
-    vec = np.asarray(r.json()["embedding"], dtype=np.float32)
-    n = np.linalg.norm(vec)
-    if n > 0:
-        vec = vec / n
-    return vec
+    payload = r.json()
+    raw = payload["embeddings"][0] if "embeddings" in payload else payload["embedding"]
+    return _normalize(np.asarray(raw, dtype=np.float32))
 
 
 def _vec_to_blob(v: np.ndarray) -> bytes:
@@ -63,13 +67,17 @@ async def _embed_async(
     on_result,
     on_progress,
     progress_every: int,
+    ollama_url: str = OLLAMA_URL,
 ) -> int:
-    """Embed `todo` concurrently. on_result(row, vec) is called for each success."""
+    """Embed `todo` concurrently (single-input calls fanned out via semaphore)."""
     sem = asyncio.Semaphore(EMBED_CONCURRENCY)
     done = 0
     total = len(todo)
 
-    async with httpx.AsyncClient(http2=False, limits=httpx.Limits(max_connections=EMBED_CONCURRENCY*2)) as client:
+    async with httpx.AsyncClient(
+        http2=False, limits=httpx.Limits(max_connections=EMBED_CONCURRENCY * 2)
+    ) as client:
+
         async def one(row):
             nonlocal done
             text = (row["title"] + "\n\n" + row["content"]).strip()
@@ -78,7 +86,7 @@ async def _embed_async(
                 return
             async with sem:
                 try:
-                    vec = await _embed_one_async(client, model, text)
+                    vec = await _embed_one_async(client, model, text, ollama_url)
                 except Exception as e:
                     if on_progress:
                         on_progress(f"  ! embed failed for {row['rel_path']}: {e}")
@@ -98,6 +106,7 @@ def ensure_embeddings(
     model: str = DEFAULT_MODEL,
     progress_every: int = 50,
     on_progress=None,
+    ollama_url: str = OLLAMA_URL,
 ) -> tuple[int, int]:
     """For every note whose embedding is missing or stale, compute via Ollama.
     Returns (computed, skipped)."""
@@ -139,7 +148,7 @@ def ensure_embeddings(
             conn.commit()
             results.clear()
 
-    asyncio.run(_embed_async(todo, model, on_result, on_progress, progress_every))
+    asyncio.run(_embed_async(todo, model, on_result, on_progress, progress_every, ollama_url))
 
     if results:
         conn.executemany(
