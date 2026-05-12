@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="Basalt — Your vault already knows. Go ask it." width="100%">
+  <img src="docs/banner.png" alt="Basalt — Your vault already knows. Go ask it." width="100%">
 </p>
 
 # Basalt
@@ -179,6 +179,34 @@ similarity 0.90  ·  no wikilink between them
 
    ▸ Link A ↔ B     ▸ Open both     ▸ Dismiss
 ```
+
+## Benchmarks
+
+Real numbers from a working 2,022-note Obsidian vault:
+
+| Step | Cost | Notes |
+|------|------|-------|
+| **Parse + link graph** | 1.1s for 2,022 notes / 9,284 links | Pure Python; deterministic |
+| **Embed (first run)** | 143.5s for 636 notes uncached | Ollama `nomic-embed-text`, 6-way concurrent. ~4.4 notes/sec |
+| **Embed (cache hit)** | 0s | Content-hash cache; unchanged notes skip the network call entirely |
+| **Brief — single section** | ~1-2s on a built index | All five verbs read from SQLite + numpy; no embedding at brief-time |
+| **Brief — all five sections** | ~5-10s | Connection + Implicit Thesis dominate (pairwise similarity scan) |
+| **Audit (re-evaluate pending findings)** | <1s | SQL-only — no model calls |
+| **Wheel size** | ~350 KB | Includes the wheel-shipped sample DB for the wizard preview |
+
+On a 1,500-note vault the full Brief comfortably comes in under 90 seconds end-to-end (the Phase-0 acceptance target). The cache means daily Briefs after the first index are near-instant.
+
+## Limits and known weaknesses
+
+Basalt v0.0.15 is honest about its rough edges. None of these are blockers for the wedge ("surface what you wrote and forgot"), but you should know them before relying on the output:
+
+- **Contradiction is v0 heuristic.** It flags pairs with asymmetric negation, reversal markers, and polarity pairs. Real conflicts will show up; so will false positives where two unrelated notes both contain the word "actually." The CLI labels every contradiction as *"v0 — verify before acting."*
+- **Implicit Thesis is a cluster, not a sentence.** The v0 verb finds dense neighborhoods of notes converging on something, but it doesn't synthesize the through-line — it returns the centroid note's load-bearing sentence as a proxy. Naming the thesis is Phase 1 (LLM-assisted, Pro tier, BYO-key).
+- **Drift tangles related project names.** The word-boundary regex matches `Virtuoso` in `Virtuoso Platform`, `Virtuoso Vault`, etc. Longest-first matching helps but isn't perfect. If your projects share root names, expect some collapse.
+- **Stale-knowledge detection is not yet shipped.** Basalt finds what you *wrote and forgot*; it doesn't yet flag what's labeled `status: active` but hasn't been touched in 90 days. That's the Stale verb (planned, see `docs/superpowers/plans/2026-05-12-stale-verb.md`).
+- **Embedding model is fixed in the Open tier.** `nomic-embed-text` only. Better-but-bigger models (`bge-m3`, `Qwen3-Embedding-8B`) are gated to Pro for now to keep the no-network promise verifiable.
+- **Falsification rules are time-bounded.** Many rules say "wrong if X within 30/60/90 days." Until that window elapses, the verdict stays `pending`. Your track record fills in over weeks, not minutes.
+- **Desktop-only for the plugin.** The companion Obsidian plugin spawns a Python subprocess — no mobile support.
 
 ## How it works
 
