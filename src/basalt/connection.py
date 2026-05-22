@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from basalt.embed import _blob_to_vec
+from basalt.filters import sql_exclude_clause
 from basalt.verb import VerbBase, VerbResult
 from basalt.buried import (
     HUB_DENSITY_HARD,
@@ -94,11 +95,11 @@ class ConnectionVerb(VerbBase):
     def _candidates(self) -> list[dict]:
         """Return all notes with embeddings as potential candidates."""
         rows = self.conn.execute(
-            """
-            SELECT n.id, n.rel_path, n.title, n.word_count, n.content, e.vec
+            f"""
+            SELECT n.id, n.rel_path, n.title, n.word_count, n.content, n.status, n.type, n.confidence, e.vec
             FROM notes n
             JOIN embeddings e ON e.note_id = n.id
-            WHERE n.word_count >= ?
+            WHERE n.word_count >= ? AND {sql_exclude_clause()}
             """,
             (MIN_WORD_COUNT,),
         ).fetchall()

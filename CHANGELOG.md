@@ -6,6 +6,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.16] — 2026-05-22
+
+### Added — V0 verb quality fixes (Phases A-E)
+
+Closing the dogfood findings from the 2026-05-21 full-vault Brief run on a 2,795-note vault. Five engineering changes that bring v0 verbs from "shipped but noisy" to "ready for first-time-user impressions."
+
+- **`Note` carries frontmatter conventions** — `status`, `type`, `confidence` fields on the `Note` dataclass; parser extracts them from frontmatter via new `_coerce_fm_str` helper that handles non-string values gracefully (`status: true` → `"True"`, `confidence: 5` → `"5"`).
+- **`filters.py`** — new module with frontmatter-aware filter primitives shared across every verb:
+  - `filter_archived(notes)` — excludes `status` in {archived, dead, superseded}
+  - `filter_drafts(notes, allow_drafts=False)` — excludes `status` in {draft, wip}
+  - `filter_references(notes)` — excludes `type` in {reference, wiki, doc, api, template}
+  - `weight_by_confidence(note)` — HIGH=1.0, MEDIUM=0.7, LOW=0.4, unset=0.8
+  - `is_reference_path(rel_path)` — catches SKILL.md / README.md / *-reference.md / *-spec.md / *-api.md patterns without frontmatter
+  - `sql_exclude_clause()` — SQL WHERE fragment mirroring the iterator filters; used by all 5 verbs
+- **Subject-overlap gate for Contradiction** — pairs must share a tag, wikilink target, or folder prefix before evidence-scoring runs. Eliminates the ~100% false-positive class from dogfood (vault-index ↔ daily note, MEMORY ↔ SOUL). New helpers `_subject_set()` and `_subjects_overlap()`.
+- **Stats-string penalty in sentence scorer** — sentences with >20% digit density drop 1.0 from `_score_load_bearing` score. Fixes Implicit Thesis selecting *"79 systemd units, 53 listening ports, 14 nginx hostnames"* as a proxy thesis when claim-shaped sentences are available.
+- **Drift auto-promotion** — `reorder_for_drift_magnitude` moves Drift to position 0 in the Brief when `|max delta| > 5pp` (configurable). When drift is flat, original order preserved. The dogfood-validated magic-moment finding now leads when meaningful.
+
+### Changed
+
+- **`notes` table** — added `status`, `type`, `confidence` TEXT columns + indexes on `status` and `type`. Idempotent `_ensure_columns()` migration handles pre-existing v0.0.15-era DBs via `ALTER TABLE ADD COLUMN`. Existing rows get NULL (which the filters correctly interpret as "field unset; keep the note"). New indexes are created post-migration so legacy DBs upgrade cleanly.
+- **All 5 verbs** (`buried`, `contradiction`, `implicit_thesis`, `drift`, `connection`) — `_candidates()` queries now compose `sql_exclude_clause()` into their WHERE clause and SELECT the new frontmatter columns.
+- **`compile_brief`** — applies `reorder_for_drift_magnitude` to sections list before constructing the Brief.
+
+### Fixed
+
+- **Reference docs surfaced as Buried Insights** — `mcp-builder/reference/mcp_best_practices.md` and `Development/pdf/reference.md` were 2 of 3 false-positive Buried Insights in the dogfood run. Fixed by both frontmatter (`type: reference`) and path-based filters (`SKILL.md`, `*-reference.md` etc.).
+- **Contradiction false-positive rate ~100%** — both contradictions in the dogfood run were false positives (vault-index ↔ daily note, MEMORY ↔ SOUL). Fixed by the subject-overlap gate.
+- **Implicit Thesis centroid quote was a stats string** — *"79 systemd units, 53 listening ports, 14 nginx hostnames"* was returned as a proxy thesis. Fixed by the numeric-density penalty in sentence scoring.
+- **Drift section buried below noisier verbs** — Drift had the cleanest signal-to-noise but appeared third in the section order. Auto-promotion now leads with it when meaningful.
+
+### Engineering
+
+- **105 tests passing** (35 prior + 70 new across 11 new test files).
+- **New module:** `src/basalt/filters.py` (~170 lines).
+- **New helpers:** `_coerce_fm_str` (vault.py), `_ensure_columns` (index.py), `reorder_for_drift_magnitude` (brief.py), `_subject_set` + `_subjects_overlap` (contradiction.py), `is_reference_path` (filters.py).
+- **New test files:** `test_vault_frontmatter.py`, `test_index_frontmatter.py`, `test_filters.py`, `test_buried_filters.py`, `test_other_verbs_filters.py`, `test_brief_ordering.py`, `test_stats_string_penalty.py`, `test_contradiction_subjects.py`, `test_contradiction_gate.py`, `test_path_reference_filter.py`, `test_path_filter_integration.py`.
+- **Migration safety** — `_ensure_columns()` uses `PRAGMA table_info()` to check for column existence before `ALTER TABLE ADD COLUMN`, so opening a v0.0.15 DB with v0.0.16 code is non-destructive and idempotent.
+- **No new runtime dependencies.**
+
+### Acceptance
+
+- Re-running `basalt brief --section all --top 3` on Mr V's 2,795-note vault should no longer surface `SKILL.md` / `mcp_best_practices.md` / `pdf/reference.md` as Buried Insights, no longer pair vault-index with daily notes as contradictions, and lead with the Drift section when stated-vs-lived priority differs by more than 5pp.
+
+### Planned (carried)
+
+- Phase D2 — frontmatter `summary:` integration as priority-1 quote source (deferred; vault convention is blockquote, not frontmatter field)
+- LLM-pairwise contradiction classifier (Contradiction v1, Pro tier)
+- LLM-synthesized implicit thesis (Thesis v1, Pro tier)
+- Reactivation-window UX for contradictions (Web Layer)
+- PyPI publish — sequencing dependency in `Tasks.md` cleared by this release
+- Stale verb — scoped + planned (`docs/superpowers/plans/2026-05-12-stale-verb.md`)
+
 ## [0.0.15] — 2026-05-12
 
 ### Added — `basalt init` wizard + first-run sample preview

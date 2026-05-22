@@ -12,22 +12,51 @@ from typing import Iterator
 import frontmatter
 
 WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
-EXCLUDE_DIRS = {".git", ".obsidian", ".stversions", ".stfolder", ".trash", "node_modules", ".claude"}
+EXCLUDE_DIRS = {
+    ".git",
+    ".obsidian",
+    ".stversions",
+    ".stfolder",
+    ".trash",
+    "node_modules",
+    ".claude",
+}
 
 
 @dataclass
 class Note:
-    path: Path                   # absolute path on disk
-    rel_path: str                # path relative to vault root
-    stem: str                    # filename without .md
-    title: str                   # frontmatter title or stem
+    path: Path  # absolute path on disk
+    rel_path: str  # path relative to vault root
+    stem: str  # filename without .md
+    title: str  # frontmatter title or stem
     created: date | None
     updated: date | None
     tags: list[str] = field(default_factory=list)
-    content: str = ""            # body without frontmatter
-    wikilinks: list[str] = field(default_factory=list)   # raw link targets
+    content: str = ""  # body without frontmatter
+    wikilinks: list[str] = field(default_factory=list)  # raw link targets
     word_count: int = 0
     content_hash: str = ""
+    # Frontmatter conventions surfaced for verb-level filtering (added 2026-05-22).
+    # Values preserved as-written; downstream filters compare case-insensitively.
+    status: str | None = (
+        None  # active | draft | wip | archived | dead | validated | ...
+    )
+    type: str | None = None  # reference | spec | decision | note | ...
+    confidence: str | None = None  # HIGH | MEDIUM | LOW (uppercase by convention)
+
+
+def _coerce_fm_str(v) -> str | None:
+    """Coerce a frontmatter scalar to str, preserving None.
+
+    Frontmatter YAML may yield bool/int/None for fields the user intended
+    as strings (e.g. `confidence: 5` or `status: true`). Downstream filters
+    expect string-or-None; this coerces without mutating case.
+    """
+    if v is None:
+        return None
+    if isinstance(v, str):
+        return v
+    return str(v)
 
 
 def _coerce_date(v) -> date | None:
@@ -59,14 +88,21 @@ def _extract_wikilinks(text: str) -> list[str]:
 def _file_dates_fallback(path: Path) -> tuple[date, date]:
     st = path.stat()
     return (
-        datetime.fromtimestamp(st.st_birthtime if hasattr(st, "st_birthtime") else st.st_ctime).date(),
+        datetime.fromtimestamp(
+            st.st_birthtime if hasattr(st, "st_birthtime") else st.st_ctime
+        ).date(),
         datetime.fromtimestamp(st.st_mtime).date(),
     )
 
 
 def _is_excluded(p: Path) -> bool:
-    return any(part in EXCLUDE_DIRS or part.startswith(".") and part not in {".", ".."} and part != p.parts[-1]
-               for part in p.parts)
+    return any(
+        part in EXCLUDE_DIRS
+        or part.startswith(".")
+        and part not in {".", ".."}
+        and part != p.parts[-1]
+        for part in p.parts
+    )
 
 
 def parse_note(path: Path, vault_root: Path) -> Note | None:
@@ -116,6 +152,9 @@ def parse_note(path: Path, vault_root: Path) -> Note | None:
         wikilinks=_extract_wikilinks(body),
         word_count=len(body.split()),
         content_hash=hashlib.sha256(body.encode("utf-8", "replace")).hexdigest(),
+        status=_coerce_fm_str(fm.get("status")),
+        type=_coerce_fm_str(fm.get("type")),
+        confidence=_coerce_fm_str(fm.get("confidence")),
     )
 
 

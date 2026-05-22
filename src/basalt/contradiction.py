@@ -25,7 +25,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from basalt.embed import _blob_to_vec
-from basalt.verb import VerbResult
+from basalt.filters import sql_exclude_clause
+from basalt.verb import VerbBase, VerbResult
 from basalt.buried import (
     HUB_DENSITY_HARD,
     HUB_DENSITY_SOFT,
@@ -173,6 +174,91 @@ def _contradiction_evidence(quote_a: str, quote_b: str) -> tuple[float, list[str
     return score, signals
 
 
+# ── Subject-overlap gate (Phase C, 2026-05-22) ────────────────
+# Per dogfood findings: cosine + negation markers alone yields ~100% FP rate
+# because vault-index ↔ daily note pairs clear the threshold without sharing
+# any subject. Gate: a contradiction candidate must share at least one
+# subject (tag, wikilink target, or folder prefix) before evidence-scoring.
+
+# Tags that describe HOW a note was made or its lifecycle status, not
+# WHAT it's about. Excluded from subject sets so two unrelated auto-generated
+# notes (e.g. MEMORY.md + SOUL.md) don't pair on a meaningless tag.
+_META_TAGS = frozenset({
+    "auto-generated",
+    "auto",
+    "draft",
+    "wip",
+    "active",
+    "archived",
+    "dead",
+    "validated",
+    "daily",
+    "weekly",
+    "monthly",
+    "review",
+})
+
+# Notes with more wikilinks than this are MOCs (Maps of Content), not
+# belief-shaped. Their outbound links describe what they index, not what
+# they're about — so we drop wikilink subjects above this cap. The note
+# is still pairable on tags/folder/self-stem, but won't auto-overlap with
+# any other note that mentions any of its 200+ link targets.
+_MOC_WIKILINK_CAP = 20
+
+
+def _subject_set(
+    rel_path: str,
+    tags: str,
+    wikilinks: list[str],
+) -> set[str]:
+    """Return the set of subjects this note is "about."
+
+    Wikilinks contribute nothing if the note has >_MOC_WIKILINK_CAP of them
+    (MOC detection — the links describe what the note indexes, not what
+    it's about). Tags in _META_TAGS are dropped as semantically meaningless.
+
+    The note's own stem is included as a link:-subject so that other notes
+    linking TO this one trigger overlap. Root-level files get no folder
+    subject (they're cross-cutting; shouldn't auto-pair).
+    """
+    subjects: set[str] = set()
+
+    # Tags (skip meta-tags about lifecycle / generation method)
+    if tags:
+        for t in tags.split(","):
+            t = t.strip().lower()
+            if t and t not in _META_TAGS:
+                subjects.add(f"tag:{t}")
+
+    # Wikilinks: skip entirely for MOC notes (their links are an index, not a subject).
+    if len(wikilinks) <= _MOC_WIKILINK_CAP:
+        for w in wikilinks:
+            if not w:
+                continue
+            subjects.add(f"link:{w.strip().lower()}")
+
+    # Self-stem (so inbound links from other notes match this one)
+    from pathlib import Path as _P
+    stem = _P(rel_path).stem
+    if stem:
+        subjects.add(f"link:{stem.lower()}")
+
+    # Folder prefix — first 1-2 path segments
+    parts = _P(rel_path).parts
+    if len(parts) >= 3:
+        subjects.add(f"folder:{parts[0].lower()}/{parts[1].lower()}")
+    elif len(parts) == 2:
+        subjects.add(f"folder:{parts[0].lower()}")
+
+    return subjects
+
+
+def _subjects_overlap(a: set[str], b: set[str]) -> bool:
+    """True iff the two subject sets share at least one element."""
+    return bool(a & b)
+
+
+
 class ContradictionVerb:
     """Contradiction verb implementation.
 
@@ -202,11 +288,11 @@ class ContradictionVerb:
         min_sim = min_sim if min_sim is not None else DEFAULT_MIN_SIM
 
         rows = self.conn.execute(
-            """
-            SELECT n.id, n.rel_path, n.title, n.word_count, n.content, e.vec
+            f"""
+            SELECT n.id, n.rel_path, n.title, n.word_count, n.content, n.status, n.type, n.confidence, n.tags, e.vec
             FROM notes n
             JOIN embeddings e ON e.note_id = n.id
-            WHERE n.word_count >= ?
+            WHERE n.word_count >= ? AND {sql_exclude_clause()}
             """,
             (MIN_WORD_COUNT,),
         ).fetchall()
@@ -240,6 +326,30 @@ class ContradictionVerb:
             qualifying.append((keep_ids[int(i)], keep_ids[int(j)], float(s)))
             if len(qualifying) >= MAX_PAIRS:
                 break
+        if not qualifying:
+            return []
+
+        # ── Subject-overlap gate (Phase C, 2026-05-22) ──
+        # Per dogfood findings: cosine + negation alone yielded ~100% FP rate.
+        # Require pairs to share at least one subject (tag / wikilink target /
+        # folder prefix) before running the expensive per-pair evidence check.
+        tags_by_id = {r["id"]: (r["tags"] or "") for r in rows}
+        link_rows = self.conn.execute(
+            "SELECT from_note_id, target FROM links WHERE from_note_id IN ("
+            + ",".join("?" for _ in keep_ids) + ")",
+            tuple(keep_ids),
+        ).fetchall()
+        wikilinks_by_id: dict[int, list[str]] = {nid: [] for nid in keep_ids}
+        for lr in link_rows:
+            wikilinks_by_id[lr["from_note_id"]].append(lr["target"])
+        subjects_by_id = {
+            nid: _subject_set(paths[nid], tags_by_id[nid], wikilinks_by_id[nid])
+            for nid in keep_ids
+        }
+        qualifying = [
+            (a, b, s) for (a, b, s) in qualifying
+            if _subjects_overlap(subjects_by_id[a], subjects_by_id[b])
+        ]
         if not qualifying:
             return []
 
