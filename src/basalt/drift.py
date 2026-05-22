@@ -28,11 +28,13 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Iterable
 
+from basalt.filters import sql_exclude_clause
 
-DEFAULT_WINDOW_DAYS    = 30        # how far back to walk daily notes
-MIN_PROJECTS           = 2         # need at least 2 projects for drift to be meaningful
-MIN_DAILY_NOTES        = 3         # need at least 3 daily notes in the window
-DEFAULT_TOP_N          = 1         # one Drift finding by default — too many is noise
+
+DEFAULT_WINDOW_DAYS = 30  # how far back to walk daily notes
+MIN_PROJECTS = 2  # need at least 2 projects for drift to be meaningful
+MIN_DAILY_NOTES = 3  # need at least 3 daily notes in the window
+DEFAULT_TOP_N = 1  # one Drift finding by default — too many is noise
 
 # Project root recognition — match paths under any "02-Projects" / "Projects" subfolder
 _PROJECT_PATH_RE = re.compile(r"^(?:\d+[-_])?Projects/([^/]+)(?:/|$)")
@@ -43,25 +45,25 @@ _DAILY_FILENAME_RE = re.compile(r"^.*?(\d{4}-\d{2}-\d{2}).*\.md$")
 @dataclass
 class ProjectShare:
     name: str
-    stated_notes: int            # count of notes in the project's folder tree
-    stated_share: float          # stated_notes / total_stated
-    stated_rank: int             # 1-based rank by stated_share
-    lived_mentions: int          # count of name occurrences across daily notes in window
-    lived_share: float           # lived_mentions / total_lived
-    lived_rank: int              # 1-based rank by lived_share
-    drift_pct: float             # lived_share - stated_share, in pp
+    stated_notes: int  # count of notes in the project's folder tree
+    stated_share: float  # stated_notes / total_stated
+    stated_rank: int  # 1-based rank by stated_share
+    lived_mentions: int  # count of name occurrences across daily notes in window
+    lived_share: float  # lived_mentions / total_lived
+    lived_rank: int  # 1-based rank by lived_share
+    drift_pct: float  # lived_share - stated_share, in pp
 
 
 @dataclass
 class DriftFinding:
     window_days: int
-    daily_note_count: int        # notes seen in window
-    project_count: int           # number of projects compared
-    total_mentions: int          # sum of mentions across all projects
-    shares: list[ProjectShare]   # all projects, sorted by absolute drift
+    daily_note_count: int  # notes seen in window
+    project_count: int  # number of projects compared
+    total_mentions: int  # sum of mentions across all projects
+    shares: list[ProjectShare]  # all projects, sorted by absolute drift
     headline_overworked: ProjectShare | None  # biggest positive drift — lived ≫ stated
-    headline_underworked: ProjectShare | None # biggest negative drift — stated ≫ lived
-    score: float                 # max(|drift_pct|) — for ranking
+    headline_underworked: ProjectShare | None  # biggest negative drift — stated ≫ lived
+    score: float  # max(|drift_pct|) — for ranking
 
 
 def _extract_project_name(rel_path: str) -> str | None:
@@ -144,7 +146,7 @@ class DriftVerb:
 
         # 1. Discover projects and per-project stated note counts
         rows = self.conn.execute(
-            "SELECT rel_path, tags, content, updated FROM notes"
+            f"SELECT rel_path, tags, content, updated FROM notes WHERE {sql_exclude_clause()}"
         ).fetchall()
         if not rows:
             return []
@@ -198,16 +200,18 @@ class DriftVerb:
             stated_share = stated_n / total_stated
             lived_n = mention_counts.get(name, 0)
             lived_share = lived_n / total_lived
-            shares.append(ProjectShare(
-                name=name,
-                stated_notes=stated_n,
-                stated_share=stated_share,
-                stated_rank=stated_rank[name],
-                lived_mentions=lived_n,
-                lived_share=lived_share,
-                lived_rank=lived_rank[name],
-                drift_pct=(lived_share - stated_share) * 100.0,
-            ))
+            shares.append(
+                ProjectShare(
+                    name=name,
+                    stated_notes=stated_n,
+                    stated_share=stated_share,
+                    stated_rank=stated_rank[name],
+                    lived_mentions=lived_n,
+                    lived_share=lived_share,
+                    lived_rank=lived_rank[name],
+                    drift_pct=(lived_share - stated_share) * 100.0,
+                )
+            )
 
         shares.sort(key=lambda s: -abs(s.drift_pct))
 
@@ -230,10 +234,11 @@ class DriftVerb:
             score=score,
         )
 
-        return [finding][:max(1, top_n)]
+        return [finding][: max(1, top_n)]
 
 
 # ── Backwards-compatible wrapper ─────────────────────────────────
+
 
 def find_drift(
     conn: sqlite3.Connection,

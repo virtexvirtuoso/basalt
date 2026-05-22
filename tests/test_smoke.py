@@ -265,13 +265,13 @@ def test_contradiction_finds_candidates_with_signals(tmp_path):
     # min_sim floor with the strategy/postmortem pair.
     other = rng.standard_normal(64).astype(np.float32); other /= np.linalg.norm(other)
 
-    def _insert(rel, content, anchor=None):
+    def _insert(rel, content, anchor=None, tags=""):
         anchor = anchor if anchor is not None else base
         cur = conn.execute(
-            "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO notes (rel_path, stem, title, created, updated, word_count, content, content_hash, tags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (rel, rel, rel, date.today().isoformat(), date.today().isoformat(),
-             len(content.split()), content, rel),
+             len(content.split()), content, rel, tags),
         )
         nid = cur.fetchone()[0]
         v = (anchor + rng.standard_normal(64) * 0.03).astype(np.float32); v /= np.linalg.norm(v)
@@ -288,14 +288,16 @@ def test_contradiction_finds_candidates_with_signals(tmp_path):
         "The cadence works because it forces synthesis instead of consumption. "
         "We have evidence from the first cohort that retention improves when the "
         "workflow runs on a schedule. Keep the workflow. Do not change the cadence "
-        "or the cohort gains we have observed."
+        "or the cohort gains we have observed.",
+        tags="weekly-brief"
     )
     b_id = _insert("Y/postmortem.md",
         "Actually the weekly Brief workflow doesn't ship value; we should kill it. "
         "On reflection the cohort retention numbers were noise — sample size was "
         "too small to read. The cadence is forced and the synthesis is shallow "
         "because users have no time to read deeply between deliveries. The right "
-        "move is to kill the weekly Brief workflow and replace it with on-demand only."
+        "move is to kill the weekly Brief workflow and replace it with on-demand only.",
+        tags="weekly-brief"
     )
     # Filler notes — different embedding cluster, different topic, must not pair with the above.
     for i in range(4):

@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 
 from basalt.embed import _blob_to_vec
+from basalt.filters import sql_exclude_clause
 from basalt.verb import VerbBase, VerbResult
 
 
@@ -252,6 +253,35 @@ def _score_load_bearing(
     elif L < 40:
         score -= 0.5
 
+    # Stats-string penalty (added 2026-05-22, Phase D): high numeric density
+    # signals a fact/statistic rather than a claim. The dogfood centroid quote
+    # "79 systemd units, 53 listening ports, 14 nginx hostnames" was the
+    # original failure. Threshold of 0.20 catches pure-numeric listings
+    # without penalizing claims that cite a single statistic.
+    non_space = [c for c in sentence if not c.isspace()]
+    if non_space:
+        digit_ratio = sum(c.isdigit() for c in non_space) / len(non_space)
+        if digit_ratio > 0.20:
+            score -= 1.0
+
+    # Procedural-output penalty (added 2026-05-22, Phase D-extended):
+    # sentences with multiple ALL-CAPS tokens of 3+ chars are likely log
+    # output, command names, or constant references ("RESTART OK", "BUILD
+    # SUCCESS", "WARNING: ..."). These are facts about what the system
+    # said, not beliefs the user holds.
+    import re as _re
+    caps_tokens = _re.findall(r"\b[A-Z]{3,}(?:_[A-Z0-9]+)*\b", sentence)
+    if len(caps_tokens) >= 2:
+        score -= 0.8
+
+    # Procedural-prefix penalty: sentences starting with "Expected:",
+    # "Note:", "Warning:", "Output:" etc. are instructions, not claims.
+    if _re.match(
+        r"^(Expected|Note|Warning|Output|Result|Returns?|See|Usage|Example|Run|Use)\s*[:\.]",
+        sentence.lstrip(),
+    ):
+        score -= 0.6
+
     return score
 
 
@@ -459,13 +489,21 @@ class BuriedInsightVerb(VerbBase):
         }
 
     def _candidates(self) -> list[dict]:
-        """Return all notes as potential candidates."""
+        """Return all notes as potential candidates.
+
+        Frontmatter exclusions (status: archived|dead|superseded|draft|wip,
+        type: reference|wiki|doc|api|template) are applied at the SQL level
+        via basalt.filters.sql_exclude_clause(). Added 2026-05-22 to fix
+        dogfood false-positives where reference docs were surfaced as buried
+        insights — see V0-Verb-Quality-Fixes-Spec-2026-05-22.
+        """
         rows = self.conn.execute(
-            """
+            f"""
             SELECT n.id, n.rel_path, n.stem, n.title, n.created, n.updated,
-                   n.word_count, n.content, e.vec
+                   n.word_count, n.content, n.status, n.type, n.confidence, e.vec
             FROM notes n
             LEFT JOIN embeddings e ON e.note_id = n.id
+            WHERE {sql_exclude_clause()}
             """
         ).fetchall()
 

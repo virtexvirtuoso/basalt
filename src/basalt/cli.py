@@ -383,6 +383,21 @@ def cmd_brief(
         # past briefs exist. Establishes calibration as a first-class concept.
         _maybe_render_track_record(conn)
 
+        # Phase E (2026-05-22, v0.0.16): promote Drift to the top of the Brief
+        # when |max delta| > 5pp. Drift is the highest signal-to-noise section
+        # per the dogfood findings; when meaningful it leads.
+        DRIFT_PROMOTION_THRESHOLD_PP = 5.0
+        drift_rendered_early = False
+        if section_key == "all":
+            early_drifts = find_drift(conn, top_n=max(1, top)) or []
+            if early_drifts and max(
+                (getattr(d, "score", 0.0) for d in early_drifts), default=0.0
+            ) > DRIFT_PROMOTION_THRESHOLD_PP:
+                _render_drift(early_drifts)
+                for d in early_drifts:
+                    record_finding(conn, "drift", d)
+                drift_rendered_early = True
+
         if section_key in ("buried-insight", "all"):
             results = find_buried_insights(conn, vault_aware=vault_aware, top_n=top)
             if results:
@@ -435,7 +450,7 @@ def cmd_brief(
                 )
                 raise typer.Exit(code=1)
 
-        if section_key in ("drift", "all"):
+        if section_key in ("drift", "all") and not drift_rendered_early:
             drifts = find_drift(conn, top_n=max(1, top))
             if drifts:
                 _render_drift(drifts)
